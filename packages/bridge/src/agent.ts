@@ -59,6 +59,8 @@ interface Conversation {
   player: string;
   history: BetaMessageParam[];
   abort?: AbortController;
+  /** Set while the queue is being worked through; one drain per player at a time. */
+  draining?: Promise<void>;
   queue: string[];
   /** Things that happened since the last request (area marked, proposal approved...). */
   notes: string[];
@@ -104,10 +106,12 @@ export class Agent {
     this.conversation(playerIndex, playerName).notes.push(text);
   }
 
-  handleMessage(playerIndex: number, playerName: string, message: string): void {
+  /** Queues a message; resolves once the helper has finished with everything queued. */
+  handleMessage(playerIndex: number, playerName: string, message: string): Promise<void> {
     const convo = this.conversation(playerIndex, playerName);
     convo.queue.push(`[${playerName}]: ${message}`);
-    if (!convo.abort) void this.drain(convo);
+    convo.draining ??= this.drain(convo).finally(() => (convo.draining = undefined));
+    return convo.draining;
   }
 
   private async drain(convo: Conversation): Promise<void> {

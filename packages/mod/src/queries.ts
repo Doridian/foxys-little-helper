@@ -11,7 +11,7 @@ import {
   SurfaceInfo,
 } from "@flh/protocol";
 import { LuaEntity, LuaForce, LuaSurface } from "factorio:runtime";
-import { helperForce, isPositionCharted, isPositionVisible, requireKnownSurface } from "./fairness";
+import { helperForce, isChunkCharted, isChunkVisible, isPositionCharted, isPositionVisible, requireKnownSurface } from "./fairness";
 
 type Params<M extends keyof RpcMethods> = RpcMethods[M]["params"];
 type Result<M extends keyof RpcMethods> = RpcMethods[M]["result"];
@@ -66,9 +66,9 @@ export function gameInfo(): Result<"game_info"> {
     let charted = 0;
     let visible = 0;
     for (const chunk of surface.get_chunks()) {
-      if (force.is_chunk_charted(surface, chunk)) {
+      if (isChunkCharted(force, surface, chunk)) {
         charted++;
-        if (force.is_chunk_visible(surface, chunk)) visible++;
+        if (isChunkVisible(force, surface, chunk)) visible++;
       }
     }
     if (charted === 0) continue;

@@ -8,7 +8,8 @@
     "rcon": "tsx src/rcon-cli.ts",
     "smoke-test": "tsx src/smoke-test.ts",
     "test": "tsx --test \"src/**/*.test.ts\"",
-    "transcript": "tsx src/transcript-cli.ts"
+    "transcript": "tsx src/transcript-cli.ts",
+    "ask": "tsx src/ask.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.0",

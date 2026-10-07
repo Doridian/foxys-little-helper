@@ -82,7 +82,13 @@ npm run rcon -w @flh/bridge -- '/c rcon.print(game.tick)'   # one-off console co
 npm run smoke-test -w @flh/bridge                            # calls every RPC against the demo world (read-only)
 npm test -w @flh/bridge                                      # planner unit tests
 npm run transcript -w @flh/bridge -- 10                      # last 10 conversations, with tool calls
+npm run ask -w @flh/bridge -- "what's broken?"               # headless: one request through the real agent (costs tokens)
 ```
+
+Several dev servers can run side by side (e.g. one per git worktree) with `FLH_DEV_DIR`,
+`FLH_GAME_PORT` and `FLH_RCON_PORT`. `FLH_DEV_FOG_OFF=1` additionally loads the test-only
+`flh-dev` mod ([scripts/dev-mods](scripts/dev-mods/flh-dev/info.json)), which lifts fog of war
+for the helper so automated tests work on worlds nobody has joined. Never use it for real games.
 
 The bridge logs every conversation (player messages, replies, tool calls and results, token
 usage, errors) to `dev/transcripts/<date>.jsonl` (`FLH_TRANSCRIPT_DIR` to change).

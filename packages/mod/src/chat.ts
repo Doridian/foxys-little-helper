@@ -30,8 +30,8 @@ export function drainEvents(): GameEvent[] {
  * it to that player's conversation history in the ask window.
  */
 export function say(message: string, playerIndex?: number, isPrivate = false): void {
+  // Unknown players (e.g. the headless test harness) just get a public message.
   const player = playerIndex === undefined ? undefined : game.get_player(playerIndex as PlayerIndex);
-  if (playerIndex !== undefined && !player) throw `Unknown player ${playerIndex}`;
   if (player && isPrivate) player.print(PRINT_PREFIX + message);
   else game.print(PRINT_PREFIX + message);
   if (player) appendHistory(player.index, "flh", message);

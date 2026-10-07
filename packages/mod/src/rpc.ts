@@ -15,6 +15,7 @@ import {
   undoAction,
 } from "./actions";
 import { drainEvents, say } from "./chat";
+import { indexChanges, indexStatus } from "./factory-index";
 import { setStatusRpc } from "./ui";
 import { forceRecipes, prototypeData, surfaceInfo } from "./prototypes";
 import { findEntities, gameInfo, inspectEntity, production, statusSummary } from "./queries";
@@ -46,6 +47,8 @@ const handlers: Handlers = {
   add_library_chest: addLibraryChestRpc,
   list_blueprints: listBlueprints,
   set_status: setStatusRpc,
+  index_status: indexStatus,
+  index_changes: indexChanges,
 };
 
 function reply(response: RpcResponse): void {

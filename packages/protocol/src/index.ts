@@ -259,7 +259,68 @@ export interface LibraryBlueprint {
   recipes: { [recipe: string]: number };
 }
 
+// ---- Factory index (mod maintains per-chunk summaries; bridge mirrors them and builds blocks) ----
+
+export interface IndexedCrafters {
+  recipe: string;
+  machine: string;
+  count: number;
+  /** Status name -> count; only present when the chunk was visible when summarised. */
+  statuses?: { [status: string]: number };
+}
+
+export interface IndexedMiners {
+  resource: string;
+  machine: string;
+  count: number;
+  statuses?: { [status: string]: number };
+}
+
+/** Everything of the helper's force in one 32x32 chunk, summarised. */
+export interface ChunkSummary {
+  surface: string;
+  /** Chunk coordinates (tile = chunk * 32). */
+  x: number;
+  y: number;
+  /** Global index revision at which this summary was written. */
+  revision: number;
+  tick: number;
+  /** Live statuses were recorded (the chunk was visible when summarised). */
+  visible: boolean;
+  /** Crafting machines (assemblers, furnaces by current or last recipe, chemical plants, refineries, silos...) by recipe. */
+  crafters: IndexedCrafters[];
+  /** Mining drills and pumpjacks by mined resource. */
+  miners: IndexedMiners[];
+  labs: number;
+  /** All other entities of ours by prototype name: belts, inserters, poles, chests, roboports... */
+  entities: { [name: string]: number };
+  /** Train stop names in this chunk. */
+  train_stops?: string[];
+}
+
 export interface RpcMethods {
+  /** Overall state of the index: current revision and per-surface coverage. */
+  index_status: {
+    params: Record<string, never>;
+    result: {
+      revision: number;
+      surfaces: { name: string; chunks: number; pending: number; last_full_pass_tick?: number }[];
+    };
+  };
+  /**
+   * Chunk summaries written after revision `since` (0 = everything), oldest first, at most `limit`
+   * (default 500). `removed` lists chunks that no longer contain anything of ours. Call again with
+   * the returned revision while `more` is true.
+   */
+  index_changes: {
+    params: { since: number; limit?: number };
+    result: {
+      revision: number;
+      chunks: ChunkSummary[];
+      removed: { surface: string; x: number; y: number; revision: number }[];
+      more: boolean;
+    };
+  };
   propose_build: {
     params: {
       surface: string;

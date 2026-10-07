@@ -4,7 +4,7 @@
 
 import { Area, BlueprintSource, Direction, LibraryBlueprint, Position } from "@flh/protocol";
 import { BlueprintEntityWrite, LuaItemStack, LuaPlayer, LuaSurface } from "factorio:runtime";
-import { chunkOf, helperForce, isPositionVisible, requireKnownSurface } from "./fairness";
+import { chunkOf, helperForce, isChunkCharted, isChunkVisible, isPositionVisible, requireKnownSurface } from "./fairness";
 
 const SCRATCH_SURFACE = "flh-scratch";
 
@@ -35,14 +35,14 @@ function forEachChunk(area: Area, fn: (chunk: { x: number; y: number }) => void)
 export function requireCharted(surface: LuaSurface, area: Area): void {
   const force = helperForce();
   forEachChunk(area, (chunk) => {
-    if (!force.is_chunk_charted(surface, chunk)) throw "Part of that area has not been charted";
+    if (!isChunkCharted(force, surface, chunk)) throw "Part of that area has not been charted";
   });
 }
 
 export function requireVisible(surface: LuaSurface, area: Area): void {
   const force = helperForce();
   forEachChunk(area, (chunk) => {
-    if (!force.is_chunk_visible(surface, chunk)) throw "Part of that area is not currently visible (no radar coverage)";
+    if (!isChunkVisible(force, surface, chunk)) throw "Part of that area is not currently visible (no radar coverage)";
   });
 }
 
