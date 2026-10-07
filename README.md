@@ -1,0 +1,89 @@
+# Foxie's Little Helper
+
+An LLM-driven helper for Factorio 2.0 that plays by the same rules you do.
+
+Ask it things in chat ("flh, why is our green chip factory on gleba stuck?") and it investigates
+the factory through the same information a player has, and (later) acts through a physical body:
+ghosts + construction bots, then an "LLM control" equipment module that makes a spidertron (or
+other vehicle) inhabitable by the helper.
+
+## Ground rules
+
+**The helper never cheats.** No teleporting, no spawning items, no peeking at uncharted areas.
+The mod enforces this, not the prompt:
+
+- Map-level knowledge is limited to chunks the force has charted.
+- Live entity details (status, inventories, belts...) require the chunk to be currently visible
+  (radar coverage or a player nearby), like remote view.
+- Future action tools will consume real items, respect reach and move bodies physically.
+
+## Architecture
+
+```
+Factorio headless server                      Bridge (Node, same host)
+┌─────────────────────────────────┐   RCON   ┌──────────────────────────────────┐
+│ mod: foxies-little-helper       │◄────────►│ RPC client (/flh-rpc <json>)     │
+│  /flh, "flh," chat -> event queue│          │ poll_events every 250ms          │
+│  /flh-rpc (RCON only) -> queries│          │ per-player conversations         │
+│  fairness checks                │          │ Claude tool runner + tools       │
+└─────────────────────────────────┘          └──────────────────────────────────┘
+```
+
+| Package | What |
+|---|---|
+| `packages/protocol` | Type-only RPC definitions shared by both sides |
+| `packages/mod` | The Factorio mod, TypeScript compiled to Lua with TypeScriptToLua + typed-factorio (2.0 line) |
+| `packages/bridge` | Node process: RCON client, Claude agent loop, tool definitions |
+
+The LLM only gets the tools defined in `packages/bridge/src/tools.ts`, with no shell or file
+access, since any player on the server can talk to it.
+
+## Development
+
+```sh
+npm install
+npm run dev-server        # builds the mod, runs an isolated headless server in ./dev (RCON 27015, password flh-dev)
+```
+
+In another terminal:
+
+```sh
+export ANTHROPIC_API_KEY=...
+FLH_RCON_PASSWORD=flh-dev npm run bridge
+```
+
+Then connect your Factorio client to `localhost` and type `flh, hello` or `/flh hello` in chat.
+`/flh stop` cancels the current request.
+
+Dev tools:
+
+```sh
+npm run rcon -w @flh/bridge -- '/c rcon.print(game.tick)'   # one-off console command
+npm run smoke-test -w @flh/bridge                            # builds a tiny test factory and calls every RPC
+```
+
+### Bridge configuration
+
+| Env var | Default |
+|---|---|
+| `FLH_RCON_HOST` / `FLH_RCON_PORT` / `FLH_RCON_PASSWORD` | `127.0.0.1` / `27015` / required |
+| `FLH_MODEL` | `claude-opus-5-5` |
+| `FLH_EFFORT` | `high` |
+| `FLH_MAX_ITERATIONS` | `40` |
+| `FLH_POLL_MS` | `250` |
+
+### Gotchas
+
+- With **no players connected**, the server does not process chart requests (radars and
+  `force.chart` queue up but nothing gets charted), so the helper's view of the map is frozen
+  until someone joins. The dev server also disables `auto_pause` so the game keeps ticking.
+- Lua can't tell empty arrays from empty objects; the bridge turns `{}` from the mod back into `[]`.
+
+## Roadmap
+
+1. **Observe** (now): game info, production rates, status summaries, entity inspection.
+2. **Plan**: ratio solver from prototype data, gap analysis ("you make 62/min, need 100").
+3. **Act via remote view**: blueprint index, site finder, ghost placement with in-game preview and
+   approval, deconstruction orders. Bots do the building.
+4. **Embodiment**: an "LLM control" equipment-grid item that lets the helper drive a spidertron
+   (autopilot, personal roboport, inventory) and possibly other vehicles.

@@ -1,0 +1,19 @@
+{
+  "name": "foxies-little-helper",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/protocol",
+    "packages/mod",
+    "packages/bridge"
+  ],
+  "scripts": {
+    "build": "npm run build -w @flh/mod && npm run typecheck -w @flh/bridge",
+    "build:mod": "npm run build -w @flh/mod",
+    "bridge": "npm run start -w @flh/bridge",
+    "dev-server": "scripts/dev-server.sh"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "@flh/mod",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "tstl --watch"
+  },
+  "devDependencies": {
+    "@flh/protocol": "*",
+    "lua-types": "^2.13.1",
+    "typed-factorio": "^3.36.0",
+    "typescript-to-lua": "^1.37.1"
+  }
+}

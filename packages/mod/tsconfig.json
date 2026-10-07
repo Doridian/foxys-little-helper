@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": [
+      "ESNext"
+    ],
+    "moduleResolution": "Node",
+    "module": "CommonJS",
+    "types": [
+      "typed-factorio/runtime",
+      "lua-types/5.2"
+    ],
+    "rootDir": "src",
+    "outDir": "build/foxies-little-helper",
+    "noUncheckedIndexedAccess": false,
+    "ignoreDeprecations": "6.0"
+  },
+  "tstl": {
+    "luaTarget": "5.2",
+    "noImplicitSelf": true,
+    "noImplicitGlobalVariables": true,
+    "luaLibImport": "require",
+    "noHeader": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}
