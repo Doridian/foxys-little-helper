@@ -305,6 +305,7 @@ export interface IndexedCrafters {
 }
 
 export interface IndexedMiners {
+  /** Mined resource entity, "" when nothing is left under the drill (depleted). */
   resource: string;
   machine: string;
   count: number;
@@ -331,6 +332,8 @@ export interface ChunkSummary {
   entities: { [name: string]: number };
   /** Train stop names in this chunk. */
   train_stops?: string[];
+  /** Unbuilt ghosts by the entity (or tile) they will become; not counted anywhere else. */
+  ghosts?: { [name: string]: number };
 }
 
 export interface RpcMethods {
@@ -339,6 +342,10 @@ export interface RpcMethods {
     params: Record<string, never>;
     result: {
       revision: number;
+      /**
+       * `chunks`: chunks with entities of ours; `pending`: marked changed, not yet re-summarised;
+       * `last_full_pass_tick`: every indexed chunk was re-summarised at or after this tick.
+       */
       surfaces: { name: string; chunks: number; pending: number; last_full_pass_tick?: number }[];
     };
   };

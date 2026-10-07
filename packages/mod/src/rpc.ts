@@ -16,6 +16,7 @@ import {
 } from "./actions";
 import { drainEvents, say } from "./chat";
 import { indexChanges, indexStatus } from "./factory-index";
+import { isRawJson } from "./raw-json";
 import { setStatusRpc } from "./ui";
 import { forgetPlace, listPlaces, rememberPlace } from "./places";
 import { forceRecipes, prototypeData, surfaceInfo } from "./prototypes";
@@ -72,7 +73,9 @@ function handle(raw: string): void {
     return;
   }
   const [ok, result] = pcall(handler, request.params ?? {});
-  if (ok) {
+  if (ok && isRawJson(result)) {
+    rcon.print(`{"id":${request.id},"ok":true,"result":${result.flh_raw_json}}`);
+  } else if (ok) {
     reply({ id: request.id, ok: true, result });
   } else {
     reply({ id: request.id, ok: false, error: tostring(result) });

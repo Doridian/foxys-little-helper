@@ -6,6 +6,7 @@ import { ActionResult, ItemCount, Position, ProposalSummary, RpcMethods } from "
 import { LuaEntity, LuaPlayer, LuaSurface, PlayerIndex } from "factorio:runtime";
 import { DIRECTIONS, addLibraryChest, dryRun, listLibrary, loadSource, nextId, requireCharted, requireVisible, scratchStack } from "./blueprints";
 import { pushEvent, say } from "./chat";
+import { markEntityDirty } from "./factory-index";
 import { helperForce, isPositionVisible, requireKnownSurface } from "./fairness";
 import { refreshPanel } from "./ui";
 
@@ -316,6 +317,7 @@ export function undoAction(params: Params<"undo_action">): Result<"undo_action">
     }
   } else if (action.kind === "recipe" && action.entity.valid) {
     returnContents(action.entity, action.entity.set_recipe(action.previous));
+    markEntityDirty(action.entity);
     result.recipes_restored++;
   }
   return result;
@@ -359,6 +361,7 @@ export function setRecipe(params: Params<"set_recipe">): Result<"set_recipe"> {
   if (!force.recipes[params.recipe]?.enabled) throw `Recipe '${params.recipe}' is not researched`;
   const [previous] = entity.get_recipe();
   returnContents(entity, entity.set_recipe(params.recipe));
+  markEntityDirty(entity);
   const action_id = recordAction({ id: nextId(), kind: "recipe", entity, previous: previous?.name });
   return { action_id, count: 1, previous: previous?.name };
 }

@@ -1,12 +1,14 @@
 import { LuaPlayer } from "factorio:runtime";
 import { ProposalOutcome, registerSelection, resolveProposal } from "./actions";
 import { cancel, registerChat, submit } from "./chat";
+import { registerIndex } from "./factory-index";
 import { registerRpc } from "./rpc";
 import { closeAsk, openAsk, takeAskInput, tickPanels, toggleAsk } from "./ui";
 
 registerRpc();
 registerChat();
 registerSelection();
+registerIndex();
 
 function send(player: LuaPlayer): void {
   const text = takeAskInput(player);
