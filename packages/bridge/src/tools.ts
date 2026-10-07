@@ -6,6 +6,7 @@ import { ToolError } from "@anthropic-ai/sdk/lib/tools/ToolError";
 import type { BlueprintSource, RpcMethod, RpcMethods } from "@flh/protocol";
 import { z } from "zod";
 import type { DesignStore } from "./designs.ts";
+import { factoryIndex } from "./factory/service.ts";
 import type { GameClient } from "./game.ts";
 import { assemblerRow } from "./layouts.ts";
 import type { PlannerService } from "./planner/service.ts";
@@ -55,6 +56,7 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
     return { kind: "string", string: input.blueprint_string! };
   }
   const rpc = <M extends RpcMethod>(method: M, params: RpcMethods[M]["params"]) => json(() => game.call(method, params));
+  const factory = factoryIndex(game, planner);
 
   return [
     betaZodTool({
@@ -162,6 +164,44 @@ Notes: \`rate\` is what the new line should produce, so to raise production to a
           }),
         ),
     }),
+
+    // ---- Factory index (factory/): production blocks clustered from the mod's chunk summaries ----
+    betaZodTool({
+      name: "factory_overview",
+      description:
+        "Map of the whole factory from the factory index: per surface, how many production blocks and machines, overall health, the biggest blocks (what they make, where, [gps] link) and the blocks with the most problems. Start here for questions about anything not right in front of the player.",
+      inputSchema: z.object({ surface: z.string().optional().describe("Only this surface") }),
+      run: ({ surface }) => json(() => factory.overview(surface)),
+    }),
+    betaZodTool({
+      name: "search_factory",
+      description: `Find production blocks (areas of related machines) in the factory index, best match first. Each result: id, surface, [gps] link, size in tiles, machine count, top recipes, health, train stations, and why it matched.
+
+- item: blocks making it (ranked by how much of the block does) or using it. Common names work: "blue circuit", "gleba science".
+- recipe: crafting recipe name.
+- text: free text matched against recipes, items, train station names and named places, e.g. "iron smelting", "oil", "Gleba science build".
+- near: rank by distance from a position (combine with surface).
+- problems_only: only blocks with machines in a problem status (ingredient shortage, no power...), worst first.
+Then use describe_block on an id for detail.`,
+      inputSchema: z.object({
+        surface: z.string().optional(),
+        item: z.string().optional(),
+        recipe: z.string().optional(),
+        text: z.string().optional(),
+        near: position.optional(),
+        problems_only: z.boolean().optional(),
+        limit: z.number().int().positive().max(30).optional(),
+      }),
+      run: (input) => json(() => factory.search(input)),
+    }),
+    betaZodTool({
+      name: "describe_block",
+      description:
+        "Detail for one production block from search_factory/factory_overview: tile area and [gps] links, recipes and mining with machine types, status counts and where each recipe sits, inputs it needs and outputs it exports, stations, roboports, and the chunks with problems (areas to pass to status_summary or find_entities). Statuses are from when each chunk was last summarised while visible.",
+      inputSchema: z.object({ id: z.string().describe("Block id, e.g. 'nauvis#3'") }),
+      run: ({ id }) => json(() => factory.describe(id)),
+    }),
+    // ---- end factory index ----
 
     // ---- Acting ----
     betaZodTool({

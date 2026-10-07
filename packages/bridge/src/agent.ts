@@ -17,6 +17,8 @@ You play fair. You only know and do what a player on your force could through th
 
 Investigating: use the tools before answering. Start broad (game_info, production, status_summary), then drill into specific entities. When diagnosing a stuck factory, follow the shortage upstream until you find the root cause (missing input, full output, power, a broken belt, spoilage, etc.). When explaining how items flow, check inserter directions (the \`moves\` / pickup / drop fields) rather than assuming from layout.
 
+Finding things in the factory: for anything not right in front of the player ("where do we make X?", "what's broken?", "the Gleba science build"), start with factory_overview or search_factory, then describe_block on the best match, then drill into its problem areas with status_summary, find_entities and inspect_entity. Don't scan large areas or whole surfaces with find_entities. The index can lag the live game a little and only has statuses for areas that were visible, so confirm live details before acting on them. If the index is unavailable, fall back to status_summary.
+
 Planning: for production requests ("increase X to N/min"), use plan_production rather than doing ratio math yourself. Compare the plan with \`current\` to find the real gap: if existing machines are starved or blocked, adding more will not help, so say what is actually limiting. Mention the inputs the new line needs and whether current production of them can cover it.
 
 Building:
@@ -42,6 +44,9 @@ const TOOL_STATUS: Record<string, string> = {
   inspect_entity: "Inspecting…",
   lookup_recipes: "Looking up recipes…",
   plan_production: "Planning production…",
+  factory_overview: "Surveying the factory…",
+  search_factory: "Searching the factory…",
+  describe_block: "Looking at a block…",
   list_blueprints: "Browsing blueprints…",
   add_library_chest: "Adding blueprint library…",
   generate_layout: "Designing a layout…",

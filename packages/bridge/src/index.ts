@@ -1,6 +1,7 @@
 import { Agent } from "./agent.ts";
 import { loadConfig } from "./config.ts";
 import { DesignStore } from "./designs.ts";
+import { factoryIndex } from "./factory/service.ts";
 import { GameClient } from "./game.ts";
 import { PlannerService } from "./planner/service.ts";
 import { Rcon } from "./rcon.ts";
@@ -20,6 +21,7 @@ async function ensureConnected(): Promise<void> {
     try {
       await rcon.connect();
       planner.invalidate();
+      factoryIndex(game, planner).invalidate();
       console.log(`[bridge] connected to ${config.rconHost}:${config.rconPort}`);
     } catch (err) {
       console.error(`[bridge] RCON connect failed (${(err as Error).message}), retrying in 5s`);
