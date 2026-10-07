@@ -390,9 +390,10 @@ export interface RpcMethods {
     result: { built: number; action_id?: number };
   };
   list_proposals: { params: Record<string, never>; result: { id: number; label: string; surface: string; area: Area }[] };
+  /** A blueprint string may also be a whole book (`book` = number of blueprints in it, nothing is stripped). */
   give_blueprint: {
     params: { player_index: number; source: BlueprintSource; label?: string };
-    result: { entities: number; removed_unbuildable: { [name: string]: number } };
+    result: { entities: number; removed_unbuildable: { [name: string]: number }; book?: number };
   };
   undo_action: {
     params: { action_id?: number };
@@ -412,6 +413,8 @@ export interface RpcMethods {
   };
   add_library_chest: { params: { surface: string; position: Position }; result: { chests: number } };
   list_blueprints: { params: { player_index?: number }; result: LibraryBlueprint[] };
+  /** Which entity names this game doesn't have (mods not installed) or players can't build (script-only). At most 500 names. */
+  check_entities: { params: { names: string[] }; result: { unknown: string[]; unbuildable: string[] } };
   /** Progress of a player's request, shown in their FLH panel. `done` clears it. */
   set_status: { params: { player_index: number; state: "thinking" | "done"; detail?: string }; result: true };
   prototypes: { params: Record<string, never>; result: PrototypeData };

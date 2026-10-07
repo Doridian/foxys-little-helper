@@ -4,7 +4,18 @@
 
 import { ActionResult, ItemCount, Position, ProposalSummary, RpcMethods } from "@flh/protocol";
 import { LuaEntity, LuaItemStack, LuaPlayer, LuaSurface, PlayerIndex } from "factorio:runtime";
-import { DIRECTIONS, addLibraryChest, dryRun, listLibrary, loadSource, nextId, requireCharted, requireVisible } from "./blueprints";
+import {
+  DIRECTIONS,
+  addLibraryChest,
+  buildable,
+  dryRun,
+  listLibrary,
+  loadSource,
+  nextId,
+  requireCharted,
+  requireVisible,
+  scratchStack,
+} from "./blueprints";
 import { pushEvent, say } from "./chat";
 import { markEntityDirty } from "./factory-index";
 import { chunkKey, helperForce, isPositionCharted, isPositionVisible, requireKnownSurface } from "./fairness";
@@ -283,11 +294,35 @@ function giveStack(target: LuaPlayer, blueprint: LuaItemStack): void {
 export function giveBlueprint(params: Params<"give_blueprint">): Result<"give_blueprint"> {
   const target = player(params.player_index);
   if (!target) throw "Unknown player";
+  if (params.source.kind === "string") {
+    // Books go to the cursor as they are: the player picks what to place.
+    const scratch = scratchStack(0);
+    scratch.clear();
+    if (scratch.import_stack(params.source.string) === 1) throw "Could not import that blueprint string";
+    if (scratch.is_blueprint_book) {
+      const book = scratch.get_inventory(defines.inventory.item_main)?.get_item_count() ?? 0;
+      if (params.label) scratch.label = params.label;
+      giveStack(target, scratch);
+      scratch.clear();
+      return { entities: 0, removed_unbuildable: {}, book };
+    }
+  }
   const { stack, removed } = loadSource(params.source, target, params.label);
   const entities = stack.get_blueprint_entity_count();
   giveStack(target, stack);
   stack.clear();
   return { entities, removed_unbuildable: removed };
+}
+
+export function checkEntities(params: Params<"check_entities">): Result<"check_entities"> {
+  if (params.names.length > 500) throw "At most 500 names";
+  const unknown: string[] = [];
+  const unbuildable: string[] = [];
+  for (const name of params.names) {
+    if (!prototypes.entity[name]) unknown.push(name);
+    else if (!buildable(name)) unbuildable.push(name);
+  }
+  return { unknown, unbuildable };
 }
 
 // ---- Undo ----

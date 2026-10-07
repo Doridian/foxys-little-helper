@@ -4,6 +4,7 @@
 import { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from "@flh/protocol";
 import {
   addLibraryChestRpc,
+  checkEntities,
   deconstruct,
   findSpace,
   giveBlueprint,
@@ -48,6 +49,7 @@ const handlers: Handlers = {
   find_space: findSpace,
   add_library_chest: addLibraryChestRpc,
   list_blueprints: listBlueprints,
+  check_entities: checkEntities,
   set_status: setStatusRpc,
   index_status: indexStatus,
   index_changes: indexChanges,

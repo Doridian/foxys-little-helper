@@ -2,6 +2,7 @@
 //   c0/3, p1/5/2   in-game library (chests registered with add_library_chest, player inventory)
 //   repo:<file>#<path>   blueprint strings in the repo's blueprints/ folder
 //   gen:<n>        layouts generated this session
+//   fp:<key>#<path>  public blueprints fetched from factorioprints.com this session (fp:<key> = the whole string)
 
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -18,7 +19,7 @@ interface RepoBlueprint {
   blueprint: BlueprintJson;
 }
 
-function summarize(id: string, bp: BlueprintJson, book?: string): LibraryBlueprint {
+export function summarize(id: string, bp: BlueprintJson, book?: string): LibraryBlueprint {
   const entities: Record<string, number> = {};
   const recipes: Record<string, number> = {};
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -42,8 +43,18 @@ function flattenBook(book: BookJson, path: string, label: string | undefined, ou
   }
 }
 
+/** "2.0.55" from a blueprint's packed version number (four 16-bit parts). */
+export function gameVersion(version: unknown): string | undefined {
+  if (typeof version !== "number" || version <= 0) return undefined;
+  const part = (shift: number) => Math.floor(version / 2 ** shift) % 65536;
+  return `${part(48)}.${part(32)}.${part(16)}`;
+}
+
 export class DesignStore {
   private repo = new Map<string, RepoBlueprint>();
+  /** Fetched public blueprints: whole exchange strings, and each blueprint in them. */
+  private external = new Map<string, string>();
+  private externalBlueprints = new Map<string, RepoBlueprint>();
   private generated = new Map<string, GeneratedLayout>();
   private nextGenerated = 1;
 
@@ -78,6 +89,26 @@ export class DesignStore {
     console.log(`[designs] ${this.repo.size} blueprints from ${this.dir}`);
   }
 
+  /**
+   * Registers a fetched exchange string (blueprint or book) under `prefix`: `prefix` is the whole
+   * string, `prefix#/1/2` each blueprint in a book. Returns the summaries, books flattened.
+   */
+  addExternal(prefix: string, text: string): { version?: string; book?: string; designs: LibraryBlueprint[] } {
+    const json = decodeBlueprintString(text);
+    this.external.set(prefix, text);
+    const designs: LibraryBlueprint[] = [];
+    const add = (path: string, bp: BlueprintJson, book?: string) => {
+      const id = `${prefix}${path}`;
+      const meta = summarize(id, bp, book);
+      this.externalBlueprints.set(id, { meta, blueprint: bp });
+      designs.push(meta);
+    };
+    if (json.blueprint) add("", json.blueprint);
+    if (json.blueprint_book) flattenBook(json.blueprint_book, "#", undefined, add);
+    const version = gameVersion((json.blueprint ?? json.blueprint_book)?.["version"]);
+    return { version, book: json.blueprint_book?.label ?? (json.blueprint_book ? "book" : undefined), designs };
+  }
+
   addGenerated(layout: GeneratedLayout): string {
     const id = `gen:${this.nextGenerated++}`;
     this.generated.set(id, layout);
@@ -95,7 +126,12 @@ export class DesignStore {
     if (repo) return { kind: "string", string: encodeBlueprintString({ blueprint: repo.blueprint }) };
     const generated = this.generated.get(id);
     if (generated) return { kind: "entities", entities: generated.entities, label: generated.label };
+    const external = this.externalBlueprints.get(id);
+    if (external) return { kind: "string", string: encodeBlueprintString({ blueprint: external.blueprint }) };
+    const whole = this.external.get(id);
+    if (whole) return { kind: "string", string: whole };
     if (id.startsWith("repo:") || id.startsWith("gen:")) throw new Error(`Unknown design '${id}'`);
+    if (id.startsWith("fp:")) throw new Error(`Unknown design '${id}'; fetch it with get_public_blueprint first`);
     return { kind: "library", id };
   }
 }

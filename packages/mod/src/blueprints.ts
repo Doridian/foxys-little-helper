@@ -168,7 +168,7 @@ export function addLibraryChest(surfaceName: string, position: Position): number
 // ---- Loading and filtering ----
 
 /** Players can only build entities that have a regular (non-hidden) item to place them. */
-function buildable(name: string): boolean {
+export function buildable(name: string): boolean {
   const items = prototypes.entity[name]?.items_to_place_this ?? [];
   return items.some((i) => prototypes.item[i.name] !== undefined && !prototypes.item[i.name]!.hidden);
 }
@@ -268,8 +268,16 @@ export function dryRun(
   entities: BlueprintEntity[] = stack.get_blueprint_entities() ?? [],
 ): { ghosts: GhostInfo[]; bbox: Area } {
   const surface = scratchSurface();
-  let extent = 8;
-  for (const e of entities) extent = math.max(extent, math.abs(e.position.x), math.abs(e.position.y));
+  // build_blueprint centres the design on the position, so only its span matters (old strings
+  // often carry large absolute coordinates).
+  let [x1, y1, x2, y2] = [math.huge, math.huge, -math.huge, -math.huge];
+  for (const e of entities) {
+    x1 = math.min(x1, e.position.x);
+    y1 = math.min(y1, e.position.y);
+    x2 = math.max(x2, e.position.x);
+    y2 = math.max(y2, e.position.y);
+  }
+  const extent = entities.length === 0 ? 8 : math.max(8, (x2 - x1) / 2 + 8, (y2 - y1) / 2 + 8);
   // Bounds the scratch chunks generated (once) as well as the work below.
   if (extent > MAX_AREA_SIZE / 2) throw `That design is more than ${MAX_AREA_SIZE} tiles across; build it in parts`;
   surface.request_to_generate_chunks({ x: 0, y: 0 }, math.ceil(extent / 16) + 1);

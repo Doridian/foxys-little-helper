@@ -118,7 +118,7 @@ ln -s "$PWD/packages/mod/build/foxies-little-helper" ~/.factorio/mods/foxies-lit
 |---|---|
 | `FLH_RCON_HOST` / `FLH_RCON_PORT` / `FLH_RCON_PASSWORD` | `127.0.0.1` / `27015` / required |
 | `FLH_MODEL` | `claude-opus-5-5` |
-| `FLH_EFFORT` | `high` |
+| `FLH_EFFORT` | `medium` |
 | `FLH_MAX_ITERATIONS` | `40` |
 | `FLH_POLL_MS` | `250` |
 | `FLH_CLEAR_TRIGGER_TOKENS` / `FLH_CLEAR_KEEP` / `FLH_CLEAR_AT_LEAST_TOKENS` | `100000` / `10` / `30000` (server-side clearing of old tool results) |
@@ -180,6 +180,11 @@ The helper can build from:
 - **In-game blueprints**: blueprints/books in chests you register ("use the chest I marked as
   your library") and in your inventory. Mods can't read the personal blueprint library.
 - **Repo blueprints**: exchange strings in [blueprints/](blueprints/README.md), one per `.txt`.
+- **Public blueprints** from [factorioprints.com](https://factorioprints.com): the helper searches
+  titles (and site tags), fetches a blueprint or book, and can preview any page of it or hand you
+  the whole book. Pre-2.0 strings are converted on import; entities from mods you don't have are
+  reported and dropped. Titles and descriptions are treated as untrusted text. Turn it off with
+  `FLH_PUBLIC_BLUEPRINTS=0`.
 - **Copies** of a working section of your factory.
 - **Generated layouts**: `assembler_row` (N machines between an input and an output belt) for now.
 
