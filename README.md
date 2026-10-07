@@ -33,7 +33,7 @@ Factorio headless server                      Bridge (Node, same host)
 |---|---|
 | `packages/protocol` | Type-only RPC definitions shared by both sides |
 | `packages/mod` | The Factorio mod, TypeScript compiled to Lua with TypeScriptToLua + typed-factorio (2.0 line) |
-| `packages/bridge` | Node process: RCON client, Claude agent loop, tool definitions |
+| `packages/bridge` | Node process: RCON client, Claude agent loop, tool definitions, production planner |
 
 The LLM only gets the tools defined in `packages/bridge/src/tools.ts`, with no shell or file
 access, since any player on the server can talk to it.
@@ -60,6 +60,14 @@ Dev tools:
 ```sh
 npm run rcon -w @flh/bridge -- '/c rcon.print(game.tick)'   # one-off console command
 npm run smoke-test -w @flh/bridge                            # builds a tiny test factory and calls every RPC
+npm test -w @flh/bridge                                      # planner unit tests
+```
+
+To test with your normal client, symlink the build into your mods folder (the server and client
+then load the same files):
+
+```sh
+ln -s "$PWD/packages/mod/build/foxies-little-helper" ~/.factorio/mods/foxies-little-helper
 ```
 
 ### Bridge configuration
@@ -79,10 +87,29 @@ npm run smoke-test -w @flh/bridge                            # builds a tiny tes
   until someone joins. The dev server also disables `auto_pause` so the game keeps ticking.
 - Lua can't tell empty arrays from empty objects; the bridge turns `{}` from the mod back into `[]`.
 
+## Production planner
+
+`plan_production` (in `packages/bridge/src/planner/`) turns "N items/min of X on surface S" into
+recipe steps, machine counts, power, raw inputs, mining drills and byproducts, then compares it with
+live production stats and existing machines on that surface. The LLM picks the goal and options;
+the numbers come from deterministic code working on prototype data exported by the mod.
+
+- Uses only researched recipes and machines by default (`allow_locked` to look ahead), picking the
+  best researched machine per recipe, or the most basic one when none is researched yet.
+- Knows each planet: surface conditions, and which resources and tile fluids (water, lava...) its map
+  generation places. Raw resources available locally are mined/pumped; elsewhere recipes are chosen
+  that work with what is there (molten iron from lava on Vulcanus, scrap recycling on Fulgora,
+  asteroid crushing on platforms).
+- Modules, beacons (with the 2.0 beacon profile), recipe productivity research and mining
+  productivity are applied.
+- Byproducts are credited greedily and steps sharing a recipe are merged, so a multi-output recipe
+  is sized once. It is not a full LP optimiser (it won't balance cracking for you), spoilage is not
+  modelled (it says when an item comes from spoiling), and quality is ignored.
+
 ## Roadmap
 
-1. **Observe** (now): game info, production rates, status summaries, entity inspection.
-2. **Plan**: ratio solver from prototype data, gap analysis ("you make 62/min, need 100").
+1. **Observe** (done): game info, production rates, status summaries, entity inspection.
+2. **Plan** (now): ratio solver from prototype data, gap analysis ("you make 62/min, need 100").
 3. **Act via remote view**: blueprint index, site finder, ghost placement with in-game preview and
    approval, deconstruction orders. Bots do the building.
 4. **Embodiment**: an "LLM control" equipment-grid item that lets the helper drive a spidertron

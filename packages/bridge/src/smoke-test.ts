@@ -28,6 +28,9 @@ await show("find_entities", game.call("find_entities", { surface: "nauvis", type
 await show("inspect_entity", game.call("inspect_entity", { surface: "nauvis", position: { x: 6.5, y: 2.5 }, name: "assembling-machine-2" }));
 await show("not_visible", game.call("inspect_entity", { surface: "nauvis", position: { x: 5000, y: 5000 } }));
 await show("bad_surface", game.call("production", { surface: "gleba", window: "1m" }));
+await show("force_recipes", game.call("force_recipes", {}).then((f) => ({ ...f, enabled_recipes: f.enabled_recipes.length })));
+await show("surface_info", game.call("surface_info", { surface: "vulcanus" }));
+await show("prototypes", game.call("prototypes", {}).then((p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v.length]))));
 await show("poll_events", game.call("poll_events", {}));
 await show("say", game.call("say", { message: "hello from the smoke test" }));
 rcon.close();

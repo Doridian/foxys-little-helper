@@ -1,12 +1,14 @@
 import { Agent } from "./agent.ts";
 import { loadConfig } from "./config.ts";
 import { GameClient } from "./game.ts";
+import { PlannerService } from "./planner/service.ts";
 import { Rcon } from "./rcon.ts";
 
 const config = loadConfig();
 const rcon = new Rcon(config.rconHost, config.rconPort, config.rconPassword);
 const game = new GameClient(rcon);
-const agent = new Agent(game, config);
+const planner = new PlannerService(game);
+const agent = new Agent(game, config, planner);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -14,6 +16,7 @@ async function ensureConnected(): Promise<void> {
   while (!rcon.connected) {
     try {
       await rcon.connect();
+      planner.invalidate();
       console.log(`[bridge] connected to ${config.rconHost}:${config.rconPort}`);
     } catch (err) {
       console.error(`[bridge] RCON connect failed (${(err as Error).message}), retrying in 5s`);

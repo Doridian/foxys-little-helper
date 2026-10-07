@@ -6,6 +6,7 @@ import { ToolError } from "@anthropic-ai/sdk/lib/tools/ToolError";
 import type { RpcMethod, RpcMethods } from "@flh/protocol";
 import { z } from "zod";
 import { GameClient, RpcError } from "./game.ts";
+import type { PlannerService } from "./planner/service.ts";
 
 const position = z.object({ x: z.number(), y: z.number() });
 const area = z.object({ left_top: position, right_bottom: position });
@@ -18,15 +19,16 @@ const typeFilter = z
   .optional()
   .describe("Prototype type(s), e.g. 'assembling-machine', 'inserter', 'transport-belt'");
 
-export function createTools(game: GameClient) {
-  async function rpc<M extends RpcMethod>(method: M, params: RpcMethods[M]["params"]): Promise<string> {
+export function createTools(game: GameClient, planner: PlannerService) {
+  async function json(fn: () => Promise<unknown>): Promise<string> {
     try {
-      return JSON.stringify(await game.call(method, params));
+      return JSON.stringify(await fn());
     } catch (err) {
       if (err instanceof RpcError) throw new ToolError(err.message);
       throw err;
     }
   }
+  const rpc = <M extends RpcMethod>(method: M, params: RpcMethods[M]["params"]) => json(() => game.call(method, params));
 
   return [
     betaZodTool({
@@ -87,6 +89,52 @@ export function createTools(game: GameClient) {
         name: z.string().optional(),
       }),
       run: (input) => rpc("inspect_entity", input),
+    }),
+    betaZodTool({
+      name: "lookup_recipes",
+      description:
+        "Which recipes make an item or fluid (with ingredients, products, time, whether researched, surface conditions), which recipes use it, and which resources it is mined from.",
+      inputSchema: z.object({ item: z.string().describe("Item or fluid name, e.g. 'electronic-circuit', 'petroleum-gas'") }),
+      run: ({ item }) => json(() => planner.recipes(item)),
+    }),
+    betaZodTool({
+      name: "plan_production",
+      description: `Calculate a production line for a target rate on a surface: recipe chain, machine counts (fractional; build the ceiling), power, raw inputs, byproducts and mining drills. Uses only researched recipes and machines by default, picks the best available machine per recipe, and respects planet surface conditions.
+
+Also returns \`current\`: current production/consumption of every involved item on that surface (10 minute average) and existing machines per recipe with their statuses, so you can work out the gap ("making 62/min, need 100").
+
+Notes: \`rate\` is what the new line should produce, so to raise production to a total, plan for the difference. Use \`inputs\` for items already available (e.g. plates from the main bus) so they are not expanded. Byproducts are not credited against other demand, so oil processing and recipe loops are approximate; read the warnings.`,
+      inputSchema: z.object({
+        surface: z.string().describe("Where it will be built, e.g. 'nauvis'"),
+        item: z.string(),
+        rate_per_min: z.number().positive(),
+        inputs: z.array(z.string()).optional().describe("Items supplied externally; not expanded further"),
+        recipes: z.record(z.string(), z.string()).optional().describe("item -> recipe overrides"),
+        machines: z.record(z.string(), z.string()).optional().describe("recipe or recipe category -> machine overrides"),
+        modules: z
+          .array(
+            z.object({
+              machine: z.string(),
+              modules: z.array(z.string()).optional(),
+              beacons: z.object({ name: z.string(), count: z.number().int().positive(), modules: z.array(z.string()) }).optional(),
+            }),
+          )
+          .optional()
+          .describe("Modules (and beacons) to assume per machine type"),
+        allow_locked: z.boolean().optional().describe("Allow recipes/machines that are not researched yet"),
+      }),
+      run: (input) =>
+        json(() =>
+          planner.plan(input.surface, {
+            item: input.item,
+            rate: input.rate_per_min,
+            inputs: input.inputs,
+            recipes: input.recipes,
+            machines: input.machines,
+            modules: input.modules,
+            allowLocked: input.allow_locked,
+          }),
+        ),
     }),
   ];
 }

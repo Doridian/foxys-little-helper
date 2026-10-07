@@ -3,6 +3,7 @@
 
 import { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from "@flh/protocol";
 import { drainEvents, say } from "./chat";
+import { forceRecipes, prototypeData, surfaceInfo } from "./prototypes";
 import { findEntities, gameInfo, inspectEntity, production, statusSummary } from "./queries";
 
 type Handlers = { [M in RpcMethod]: (params: RpcMethods[M]["params"]) => RpcMethods[M]["result"] };
@@ -18,6 +19,9 @@ const handlers: Handlers = {
   find_entities: findEntities,
   status_summary: statusSummary,
   inspect_entity: inspectEntity,
+  prototypes: prototypeData,
+  force_recipes: forceRecipes,
+  surface_info: surfaceInfo,
 };
 
 function reply(response: RpcResponse): void {
