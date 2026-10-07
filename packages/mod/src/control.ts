@@ -12,7 +12,10 @@ registerIndex();
 
 function send(player: LuaPlayer): void {
   const text = takeAskInput(player);
-  if (text.trim() !== "") submit(player, text);
+  if (text.trim() === "") return;
+  // The panel shows progress and replies arrive in chat; the window reopens with the history.
+  closeAsk(player);
+  submit(player, text);
 }
 
 script.on_event(defines.events.on_gui_click, (event) => {
