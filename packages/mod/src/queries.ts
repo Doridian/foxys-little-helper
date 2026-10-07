@@ -156,6 +156,7 @@ function findVisible(
     radius: filter.radius,
     name: filter.name as string | string[] | undefined,
     type: filter.type as string | string[] | undefined,
+    force: filter.all_forces ? undefined : force,
   });
   const entities: LuaEntity[] = [];
   let skipped = 0;

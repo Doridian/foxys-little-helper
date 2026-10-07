@@ -331,6 +331,8 @@ export interface RpcMethods {
       name?: string | string[];
       type?: string | string[];
       limit?: number;
+      /** Also include entities of other forces: trees, rocks, enemies (default: only our own). */
+      all_forces?: boolean;
     };
     result: { entities: EntitySummary[]; truncated: boolean; skipped_not_visible: number };
   };

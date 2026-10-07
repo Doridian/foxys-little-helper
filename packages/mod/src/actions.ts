@@ -452,6 +452,7 @@ export function registerSelection(): void {
     p.print(
       `[color=255,165,0][FLH][/color] Marked ${area.right_bottom.x - area.left_top.x}x${area.right_bottom.y - area.left_top.y} area; mention it in your next request.`,
     );
+    p.clear_cursor(); // one selection per use; the tool only lives in the cursor
   });
 
   script.on_event(defines.events.on_player_alt_selected_area, (event) => {
@@ -459,5 +460,6 @@ export function registerSelection(): void {
     const selection = storage.selections?.[event.player_index];
     if (selection?.render !== undefined) rendering.get_object_by_id(selection.render)?.destroy();
     delete storage.selections?.[event.player_index];
+    game.get_player(event.player_index)?.clear_cursor();
   });
 }

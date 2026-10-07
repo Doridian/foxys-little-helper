@@ -92,7 +92,7 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
     betaZodTool({
       name: "find_entities",
       description:
-        "List entities (name, type, position, status, recipe; for inserters `moves` = which entity they take from and put into) in an area or radius. Only currently visible chunks are included; `skipped_not_visible` counts the rest.",
+        "List your force's entities (name, type, position, status, recipe; for inserters `moves` = which entity they take from and put into) in an area or radius. Set all_forces to also see trees, rocks and enemies. Only currently visible chunks are included; `skipped_not_visible` counts the rest.",
       inputSchema: z.object({
         surface: z.string(),
         area: area.optional(),
@@ -101,6 +101,7 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
         name: nameFilter,
         type: typeFilter,
         limit: z.number().int().positive().max(1000).optional(),
+        all_forces: z.boolean().optional(),
       }),
       run: (input) => rpc("find_entities", input),
     }),
