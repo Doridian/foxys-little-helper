@@ -3,12 +3,13 @@ import { loadConfig } from "./config.ts";
 import { GameClient } from "./game.ts";
 import { PlannerService } from "./planner/service.ts";
 import { Rcon } from "./rcon.ts";
+import { Transcript } from "./transcript.ts";
 
 const config = loadConfig();
 const rcon = new Rcon(config.rconHost, config.rconPort, config.rconPassword);
 const game = new GameClient(rcon);
 const planner = new PlannerService(game);
-const agent = new Agent(game, config, planner);
+const agent = new Agent(game, config, planner, new Transcript(config.transcriptDir));
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

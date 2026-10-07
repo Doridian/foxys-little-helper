@@ -1,3 +1,5 @@
+import { DEFAULT_TRANSCRIPT_DIR } from "./transcript.ts";
+
 export interface Config {
   rconHost: string;
   rconPort: number;
@@ -6,6 +8,7 @@ export interface Config {
   model: string;
   effort: "low" | "medium" | "high" | "xhigh" | "max";
   maxIterations: number;
+  transcriptDir: string;
 }
 
 function env(name: string, fallback?: string): string {
@@ -23,5 +26,6 @@ export function loadConfig(): Config {
     model: env("FLH_MODEL", "claude-opus-5-5"),
     effort: env("FLH_EFFORT", "high") as Config["effort"],
     maxIterations: Number(env("FLH_MAX_ITERATIONS", "40")),
+    transcriptDir: env("FLH_TRANSCRIPT_DIR", DEFAULT_TRANSCRIPT_DIR),
   };
 }

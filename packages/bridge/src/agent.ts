@@ -7,6 +7,7 @@ import type { Config } from "./config.ts";
 import type { GameClient } from "./game.ts";
 import type { PlannerService } from "./planner/service.ts";
 import { createTools } from "./tools.ts";
+import type { Transcript } from "./transcript.ts";
 
 const SYSTEM_PROMPT = `You are Foxie's Little Helper, an assistant living inside a multiplayer Factorio 2.0 game (possibly with the Space Age expansion). Players talk to you through in-game chat.
 
@@ -22,6 +23,7 @@ Your replies are shown in the Factorio chat window:
 - If the request is ambiguous, ask one short clarifying question; the player's next message will be the answer.`;
 
 interface Conversation {
+  player: string;
   history: BetaMessageParam[];
   abort?: AbortController;
   queue: string[];
@@ -36,30 +38,32 @@ export class Agent {
     private readonly game: GameClient,
     private readonly config: Config,
     planner: PlannerService,
+    private readonly transcript: Transcript,
   ) {
     this.tools = createTools(game, planner);
   }
 
-  private conversation(playerIndex: number): Conversation {
+  private conversation(playerIndex: number, playerName: string): Conversation {
     let convo = this.conversations.get(playerIndex);
     if (!convo) {
-      convo = { history: [], queue: [] };
+      convo = { player: playerName, history: [], queue: [] };
       this.conversations.set(playerIndex, convo);
     }
     return convo;
   }
 
   cancel(playerIndex: number, playerName: string): void {
-    const convo = this.conversation(playerIndex);
+    const convo = this.conversation(playerIndex, playerName);
     convo.queue = [];
     if (convo.abort) {
+      this.transcript.log({ kind: "cancel", player: playerName });
       convo.abort.abort();
       void this.say(`Stopped, ${playerName}.`);
     }
   }
 
   handleMessage(playerIndex: number, playerName: string, message: string): void {
-    const convo = this.conversation(playerIndex);
+    const convo = this.conversation(playerIndex, playerName);
     convo.queue.push(`[${playerName}]: ${message}`);
     if (!convo.abort) void this.drain(playerIndex, convo);
   }
@@ -76,6 +80,7 @@ export class Agent {
           convo.history = [];
         } else {
           console.error(`[agent] player ${playerIndex}:`, err);
+          this.transcript.log({ kind: "error", player: convo.player, error: err instanceof Error ? err.stack ?? err.message : String(err) });
           await this.say(`Sorry, something went wrong: ${err instanceof Error ? err.message : String(err)}`);
         }
       } finally {
@@ -85,6 +90,8 @@ export class Agent {
   }
 
   private async run(convo: Conversation, text: string, signal: AbortSignal): Promise<void> {
+    const player = convo.player;
+    this.transcript.log({ kind: "request", player, text });
     const runner = this.client.beta.messages.toolRunner(
       {
         model: this.config.model,
@@ -101,14 +108,27 @@ export class Agent {
       { signal },
     );
 
-    for await (const message of runner) {
-      if (message.stop_reason === "refusal") {
-        await this.say("I can't help with that one.");
-        continue;
+    // Log every message the runner adds to the history (model turns and tool results) as it goes.
+    let logged = convo.history.length + 1;
+    const flush = () => {
+      const messages = runner.params.messages;
+      for (; logged < messages.length; logged++) this.transcript.log({ kind: "message", player, message: messages[logged]! });
+    };
+
+    try {
+      for await (const message of runner) {
+        flush();
+        this.transcript.log({ kind: "usage", player, usage: message.usage, stop_reason: message.stop_reason });
+        if (message.stop_reason === "refusal") {
+          await this.say("I can't help with that one.");
+          continue;
+        }
+        for (const block of message.content) {
+          if (block.type === "text" && block.text.trim() !== "") await this.say(block.text.trim());
+        }
       }
-      for (const block of message.content) {
-        if (block.type === "text" && block.text.trim() !== "") await this.say(block.text.trim());
-      }
+    } finally {
+      flush();
     }
     convo.history = [...runner.params.messages];
   }

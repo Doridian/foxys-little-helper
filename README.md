@@ -78,7 +78,11 @@ Dev tools:
 npm run rcon -w @flh/bridge -- '/c rcon.print(game.tick)'   # one-off console command
 npm run smoke-test -w @flh/bridge                            # builds a tiny test factory and calls every RPC
 npm test -w @flh/bridge                                      # planner unit tests
+npm run transcript -w @flh/bridge -- 10                      # last 10 conversations, with tool calls
 ```
+
+The bridge logs every conversation (player messages, replies, tool calls and results, token
+usage, errors) to `dev/transcripts/<date>.jsonl` (`FLH_TRANSCRIPT_DIR` to change).
 
 To test with your normal client, symlink the build into your mods folder (the server and client
 then load the same files):
