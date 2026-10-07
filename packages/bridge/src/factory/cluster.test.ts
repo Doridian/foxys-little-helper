@@ -12,6 +12,18 @@ const recipesOf = (b: Block) => [...b.crafters.keys(), ...b.miners.keys()].sort(
 const sortedRecipes = (blocks: Block[]) => blocks.map(recipesOf).sort((a, b) => a.join().localeCompare(b.join()));
 
 describe("clustering", () => {
+  it("counts lab statuses and machines without a recipe", () => {
+    const [block] = cluster([
+      { ...chunk("nauvis", 0, 0, { labs: 10 }), lab_statuses: { working: 4, missing_science_packs: 6 } },
+      { ...chunk("nauvis", 1, 0, {}), idle_crafters: { "assembling-machine-2": 5 } },
+    ]);
+    assert.equal(block!.machines, 15);
+    assert.equal(block!.problems, 6);
+    assert.equal(block!.statuses.get("missing_science_packs"), 6);
+    assert.equal(block!.statuses.get("no_recipe"), 5);
+    assert.equal(block!.idleCrafters, 5);
+  });
+
   it("joins touching chunks, including diagonally, regardless of recipe", () => {
     const blocks = cluster([
       chunk("nauvis", 0, 0, { crafters: { "copper-cable": 4 } }),

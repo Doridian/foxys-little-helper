@@ -151,6 +151,27 @@ export class FactoryIndex {
     return results.length > 0 ? results : { results: [], note: "No matching blocks. Try a broader text, another surface, or factory_overview." };
   }
 
+  /** Existing machines per recipe on a surface, with status counts and the blocks they sit in. */
+  async machinesFor(surface: string, recipes: string[]) {
+    await this.refresh();
+    const blocks = this.blocks.get(surface) ?? [];
+    return recipes.flatMap((recipe) => {
+      let count = 0;
+      const statuses: Record<string, number> = {};
+      const where: { id: string; count: number }[] = [];
+      for (const b of blocks) {
+        const g = b.crafters.get(recipe);
+        if (!g) continue;
+        count += g.count;
+        for (const [s, n] of g.statuses) statuses[s] = (statuses[s] ?? 0) + n;
+        where.push({ id: b.id, count: g.count });
+      }
+      if (count === 0) return [];
+      where.sort((a, b) => b.count - a.count);
+      return [{ recipe, count, statuses, blocks: where.slice(0, 5).map((w) => w.id) }];
+    });
+  }
+
   async describe(id: string) {
     await this.refresh();
     const block = this.allBlocks().find((b) => b.id === id);

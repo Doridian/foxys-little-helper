@@ -170,8 +170,8 @@ Notes: \`rate\` is what the new line should produce, so to raise production to a
         allow_locked: z.boolean().optional().describe("Allow recipes/machines that are not researched yet"),
       }),
       run: (input) =>
-        json(() =>
-          planner.plan(input.surface, {
+        json(async () => {
+          const result = await planner.plan(input.surface, {
             item: input.item,
             rate: input.rate_per_min,
             inputs: input.inputs,
@@ -179,8 +179,18 @@ Notes: \`rate\` is what the new line should produce, so to raise production to a
             machines: input.machines,
             modules: input.modules,
             allowLocked: input.allow_locked,
-          }),
-        ),
+          });
+          if ("rates" in result.current) {
+            try {
+              const recipes = result.plan.steps.map((s) => s.recipe);
+              result.current.existing_machines = await factory.machinesFor(input.surface, recipes);
+              delete result.current.existing_machines_hint;
+            } catch {
+              // Index unavailable: keep the hint pointing at search_factory.
+            }
+          }
+          return result;
+        }),
     }),
 
     // ---- Factory index (factory/): production blocks clustered from the mod's chunk summaries ----

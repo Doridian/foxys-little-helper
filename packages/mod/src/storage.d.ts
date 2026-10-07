@@ -93,6 +93,18 @@ declare global {
     /** Round-robin cursor. */
     rr_surface?: number;
     rr_chunk?: number;
+    /** Discovery sweep (finds entities created without events): generated-chunk bounds per surface, cursor. */
+    sweep?: LuaMap<number, FlhIndexSweep>;
+    sweep_surface?: number;
+  }
+
+  interface FlhIndexSweep {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    cx: number;
+    cy: number;
   }
 
   const storage: {

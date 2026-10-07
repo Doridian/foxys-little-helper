@@ -72,7 +72,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[-_]/g, " ").replace(/\s+/g
 const stem = (w: string) => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
 
 /** Prototype names an item query or text stands for, plus the words left over. */
-export function expandText(text: string): { items: Set<string>; words: string[] } {
+export function expandText(text: string): { items: Set<string>; words: string[]; raw: string } {
   let rest = ` ${norm(text).split(" ").map(stem).join(" ")} `;
   const items = new Set<string>();
   // Longest phrases first so "blue science" wins over "science".
@@ -82,7 +82,7 @@ export function expandText(text: string): { items: Set<string>; words: string[] 
     names.forEach((n) => items.add(n));
     rest = rest.replace(p, " ");
   }
-  return { items, words: rest.split(" ").filter((w) => w !== "" && !STOPWORDS.has(w)) };
+  return { items, words: rest.split(" ").filter((w) => w !== "" && !STOPWORDS.has(w)), raw: norm(text) };
 }
 
 // ---- Formatting helpers ----
@@ -128,6 +128,7 @@ export function summarize(b: Block, why?: string): BlockSummary {
   const makes = groups.slice(0, 4).map(groupLine);
   if (groups.length > 4) makes.push(`+${groups.length - 4} more`);
   if (b.labs > 0) makes.push(`labs x${b.labs}`);
+  if (b.idleCrafters > 0) makes.push(`no recipe x${b.idleCrafters}`);
   return {
     id: b.id,
     surface: b.surface,
@@ -244,7 +245,7 @@ function itemScore(b: Block, items: Set<string>, products: (recipe: string) => s
 
 function textScore(
   b: Block,
-  text: { items: Set<string>; words: string[] },
+  text: { items: Set<string>; words: string[]; raw: string },
   products: (recipe: string) => string[],
   places: PlaceMatch[],
   why: string[],
@@ -253,9 +254,16 @@ function textScore(
   const names = [...b.crafters.keys(), ...b.miners.keys(), ...b.products].map(norm);
   const stops = b.trainStops.map((s) => s.toLowerCase());
   const surface = norm(b.surface);
+  // A station named in full ("Iron Ore Drop") is a strong signal; one shared word ("plastic") is
+  // weaker than what the block itself makes.
+  const named = b.trainStops.find((s) => norm(s) !== "" && ` ${text.raw} `.includes(` ${norm(s)} `));
+  if (named) {
+    score += 200;
+    why.push(`station ${named}`);
+  }
   for (const w of text.words) {
-    if (stops.some((s) => s.includes(w))) {
-      score += 25;
+    if (!named && stops.some((s) => s.includes(w))) {
+      score += 10;
       why.push(`station ~${w}`);
     } else if (names.some((n) => n.includes(w))) {
       score += 20;
@@ -334,7 +342,12 @@ export function describeBlock(b: Block, chunks: Map<number, ChunkSummary>, maxSp
     const statuses = new Map<string, number>();
     const recipes = new Set<string>();
     let problems = 0;
-    for (const g of [...c.crafters.map((x) => ({ ...x, name: x.recipe })), ...c.miners.map((x) => ({ ...x, name: x.resource }))]) {
+    const groups = [
+      ...c.crafters.map((x) => ({ name: x.recipe, statuses: x.statuses })),
+      ...c.miners.map((x) => ({ name: x.resource, statuses: x.statuses })),
+      ...(c.lab_statuses ? [{ name: "labs", statuses: c.lab_statuses }] : []),
+    ];
+    for (const g of groups) {
       for (const [s, n] of Object.entries(g.statuses ?? {})) {
         if (!isProblem(s)) continue;
         statuses.set(s, (statuses.get(s) ?? 0) + n);
@@ -360,6 +373,7 @@ export function describeBlock(b: Block, chunks: Map<number, ChunkSummary>, maxSp
     ...(recipes.length > maxGroups ? { more_recipes: recipes.slice(maxGroups).map(groupLine).join(", ") } : {}),
     ...(mining.length > 0 ? { mining: mining.slice(0, maxGroups).map((g) => groupDetail(g, b.surface)) } : {}),
     ...(b.labs > 0 ? { labs: b.labs } : {}),
+    ...(b.idleCrafters > 0 ? { no_recipe: Object.fromEntries(sorted(b.idleMachines)) } : {}),
     inputs,
     outputs,
     ...(b.trainStops.length > 0 ? { stations: b.trainStops } : {}),

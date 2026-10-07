@@ -71,14 +71,19 @@ export class IndexMirror {
   }
 }
 
+/** Shown for drills with nothing left under them (the mod reports resource ""). */
+export const DEPLETED = "nothing (depleted)";
+
 /** GameClient maps every empty Lua table to [], so an empty `entities`/`statuses` map arrives as []. */
 function normalize(chunk: ChunkSummary): ChunkSummary {
   const map = <T>(v: T | unknown[] | undefined) => (Array.isArray(v) || v === undefined ? undefined : v);
   return {
     ...chunk,
     crafters: (chunk.crafters ?? []).map((c) => ({ ...c, statuses: map(c.statuses) })),
-    miners: (chunk.miners ?? []).map((m) => ({ ...m, statuses: map(m.statuses) })),
+    miners: (chunk.miners ?? []).map((m) => ({ ...m, resource: m.resource || DEPLETED, statuses: map(m.statuses) })),
     entities: map(chunk.entities) ?? {},
     labs: chunk.labs ?? 0,
+    lab_statuses: map(chunk.lab_statuses),
+    idle_crafters: map(chunk.idle_crafters),
   };
 }

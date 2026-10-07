@@ -339,6 +339,10 @@ export interface ChunkSummary {
   train_stops?: string[];
   /** Unbuilt ghosts by the entity (or tile) they will become; not counted anywhere else. */
   ghosts?: { [name: string]: number };
+  /** Lab statuses (only when visible), e.g. missing_science_packs. */
+  lab_statuses?: { [status: string]: number };
+  /** Crafting machines with no recipe set, by machine name; not counted in `crafters` or `entities`. */
+  idle_crafters?: { [machine: string]: number };
 }
 
 export interface RpcMethods {

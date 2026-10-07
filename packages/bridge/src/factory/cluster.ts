@@ -13,7 +13,7 @@
 //    block within two chunks, so stations at a block's edge show up with it.
 
 import type { ChunkSummary } from "@flh/protocol";
-import { chunkKey, keyX, keyY } from "./mirror.ts";
+import { DEPLETED, chunkKey, keyX, keyY } from "./mirror.ts";
 
 export interface ClusterOptions {
   splitAbove: number;
@@ -38,6 +38,7 @@ const BACKED_UP = new Set([
   "disabled_by_script",
   "turned_off_during_daytime",
   "marked_for_deconstruction",
+  "no_recipe",
 ]);
 export const isProblem = (status: string) => !OK.has(status) && !BACKED_UP.has(status);
 export const isOk = (status: string) => OK.has(status);
@@ -73,7 +74,10 @@ export interface Block {
   crafters: Map<string, MachineGroup>;
   miners: Map<string, MachineGroup>;
   labs: number;
-  /** Crafters + miners + labs. */
+  /** Crafting machines with no recipe, total and by machine. */
+  idleCrafters: number;
+  idleMachines: Map<string, number>;
+  /** Crafters + miners + labs + idle crafters. */
   machines: number;
   products: Set<string>;
   ingredients: Set<string>;
@@ -98,11 +102,13 @@ function tags(c: ChunkSummary): string[] {
   for (const x of c.crafters) t.push(x.recipe);
   for (const x of c.miners) t.push(`\0${x.resource}`);
   if (c.labs > 0) t.push("\0lab");
+  if (c.idle_crafters) t.push("\0idle");
   return t;
 }
 
 const related = (a: string[], b: string[]) => a.some((t) => b.includes(t));
-const isProduction = (c: ChunkSummary) => c.crafters.length > 0 || c.miners.length > 0 || c.labs > 0;
+const isProduction = (c: ChunkSummary) =>
+  c.crafters.length > 0 || c.miners.length > 0 || c.labs > 0 || c.idle_crafters !== undefined;
 const hasNotable = (c: ChunkSummary) => (c.train_stops?.length ?? 0) > 0 || Object.keys(c.entities).some(isRoboport);
 const isRoboport = (name: string) => name.includes("roboport");
 
@@ -281,6 +287,8 @@ export function buildBlock(
     crafters: new Map(),
     miners: new Map(),
     labs: 0,
+    idleCrafters: 0,
+    idleMachines: new Map(),
     machines: 0,
     products: new Set(),
     ingredients: new Set(),
@@ -314,6 +322,11 @@ export function buildBlock(
     for (const [s, n] of Object.entries(statuses)) {
       g.observed += n;
       inc(g.statuses, s, n);
+    }
+    tally(statuses);
+  };
+  const tally = (statuses: { [s: string]: number }) => {
+    for (const [s, n] of Object.entries(statuses)) {
       block.observed += n;
       if (isOk(s)) block.working += n;
       else {
@@ -333,6 +346,14 @@ export function buildBlock(
     for (const x of c.miners) add(block.miners, x.resource, x.machine, x.count, x.statuses, c.x, c.y);
     block.labs += c.labs;
     block.machines += c.labs;
+    if (c.lab_statuses) tally(c.lab_statuses);
+    // No recipe is known without visibility: it's the machine's setting, not a live status.
+    for (const [machine, n] of Object.entries(c.idle_crafters ?? {})) {
+      block.idleCrafters += n;
+      inc(block.idleMachines, machine, n);
+      block.machines += n;
+      tally({ no_recipe: n });
+    }
   }
   for (const key of [...group.core, ...group.attached]) {
     const c = chunks.get(key)!;
@@ -348,7 +369,9 @@ export function buildBlock(
     for (const p of info.products(recipe)) block.products.add(p);
     for (const i of info.ingredients(recipe)) block.ingredients.add(i);
   }
-  for (const resource of block.miners.keys()) for (const p of info.mined(resource)) block.products.add(p);
+  for (const resource of block.miners.keys()) {
+    if (resource !== DEPLETED) for (const p of info.mined(resource)) block.products.add(p);
+  }
   return block;
 }
 

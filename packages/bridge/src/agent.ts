@@ -2,7 +2,7 @@
 // messages (answers to the helper's questions, new requests) continue the same history.
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
+import type { BetaMessageParam, BetaToolResultBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 import { toFactorioRichText } from "./chat-format.ts";
 import type { Config } from "./config.ts";
 import { COMPACTION_INSTRUCTIONS, CONTEXT_BETAS, contextManagement, isCompaction, shouldCompact } from "./context.ts";
@@ -166,7 +166,7 @@ export class Agent {
         context_management: contextManagement(),
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: convo.tools,
-        messages: [...convo.history, { role: "user", content: text }],
+        messages: [...convo.history, { role: "user", content: [...unansweredToolUses(convo.history), { type: "text", text }] }],
       },
       { signal },
     );
@@ -217,6 +217,11 @@ export class Agent {
       flush();
     }
     convo.history = [...runner.params.messages];
+    // The runner answers the last tool calls and then stops at max_iterations, so the history ends
+    // on our tool results instead of the model's reply.
+    if (convo.history.at(-1)?.role === "user") {
+      await this.say(convo, "I ran out of steps for this request. Say \"continue\" if you want me to keep going.");
+    }
   }
 
   private async status(convo: Conversation, state: "thinking" | "done", detail?: string): Promise<void> {
@@ -234,4 +239,18 @@ export class Agent {
       console.error("[agent] failed to send chat message:", err);
     }
   }
+}
+
+/**
+ * Tool calls in the last assistant turn that never got results (e.g. a run that died mid-turn).
+ * The next user turn must answer them first, or the API rejects the history.
+ */
+function unansweredToolUses(history: BetaMessageParam[]): BetaToolResultBlockParam[] {
+  const last = history.at(-1);
+  if (last?.role !== "assistant" || typeof last.content === "string") return [];
+  return last.content.flatMap((b) =>
+    b.type === "tool_use"
+      ? [{ type: "tool_result" as const, tool_use_id: b.id, content: "Not run: the request hit its step limit.", is_error: true }]
+      : [],
+  );
 }

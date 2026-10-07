@@ -10,11 +10,8 @@ const round = (n: number) => (Math.abs(n) >= 100 ? Math.round(n) : Math.round(n 
 export interface CurrentState {
   /** Produced/consumed per minute on the surface for every item the plan touches (10 minute average). */
   rates: { name: string; produced_per_min: number; consumed_per_min: number }[];
-  /**
-   * Existing machines per recipe, with status counts. Not filled in yet: the mod refuses
-   * whole-surface scans (they stall big bases); the factory index will answer this.
-   */
-  existing_machines?: { recipe: string; count: number; statuses: Record<string, number> }[];
+  /** Existing machines per recipe, with status counts and the blocks they're in (filled from the factory index). */
+  existing_machines?: { recipe: string; count: number; statuses: Record<string, number>; blocks: string[] }[];
   existing_machines_hint?: string;
 }
 

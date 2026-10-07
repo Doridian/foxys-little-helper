@@ -32,7 +32,8 @@ const search = (q: Parameters<typeof searchBlocks>[1], places?: Parameters<typeo
 
 describe("expandText", () => {
   it("maps player names to prototypes and drops filler words", () => {
-    assert.deepEqual(expandText("where do we make blue circuits?".replace("?", "")), { items: new Set(["processing-unit"]), words: [] });
+    const { items, words } = expandText("where do we make blue circuits?".replace("?", ""));
+    assert.deepEqual({ items, words }, { items: new Set(["processing-unit"]), words: [] });
     assert.deepEqual([...expandText("the Gleba science build").items], ["agricultural-science-pack"]);
     assert.deepEqual(expandText("iron smelting").words, []);
   });
@@ -60,6 +61,10 @@ describe("searchBlocks", () => {
     assert.equal(search({ text: "pickup" })[0]!.id, byRecipe("electronic-circuit").id);
     const smelting = search({ text: "plate" });
     assert.equal(smelting[0]!.id, byRecipe("iron-plate").id);
+    // A full station name beats item matches.
+    const station = search({ text: "where is green circuit pickup" })[0]!;
+    assert.equal(station.id, byRecipe("electronic-circuit").id);
+    assert.match(station.why!, /station Green circuit pickup/);
   });
 
   it("filters by recipe, surface and problems", () => {

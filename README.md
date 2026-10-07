@@ -134,6 +134,24 @@ the server clears old tool results inside very long requests, and once a request
 conversation over the threshold is compacted into a summary. The transcript shows clearing and
 compactions on the usage lines.
 
+### Factory index
+
+Big bases are never put into context wholesale. The mod keeps a summary per chunk of the force's
+buildings ([factory-index.ts](packages/mod/src/factory-index.ts)): machines by recipe, drills by
+resource, labs, train stops and other entities, with live statuses when the chunk is visible.
+Build and removal events mark chunks for a refresh, and a background pass re-summarises
+everything (statuses, recipe changes) while a slow sweep finds entities that scripts created
+without events. The work per tick is capped by the map setting `flh-index-chunks-per-tick`
+(default 3, weighted by chunk density; 0 pauses it), about 0.3 ms per tick on a dense base.
+
+The bridge mirrors the index through `index_changes` (only what changed since the last pull) and
+groups chunks into production blocks ([factory/](packages/bridge/src/factory/)). The helper then
+works top down: `factory_overview` and `search_factory` ("where do we make blue circuits?",
+"what's broken?", station and place names), `describe_block`, and only then live queries on the
+problem areas. On the `flh-megabase` scenario (265k entities, 1008 chunks), the first sync takes
+about 70 ms, a search 5-15 ms, and "what's broken?" is answered in 10 model calls with about 40k
+tokens of context.
+
 ### Gotchas
 
 - With **no players connected**, the server does not process chart requests (radars and

@@ -6,6 +6,8 @@
 //   per tick (setting flh-index-chunks-per-tick; dense chunks count as several, see
 //   COST_PER_CHUNK): dirty chunks first, then first-run discovery, then round-robin over every
 //   chunk with our entities, which refreshes statuses and catches recipe changes (no event).
+//   A quarter of the budget goes to a slow sweep over every generated chunk that finds entities
+//   created without events (scenarios, other mods' scripts).
 // - Fairness: only charted chunks are indexed; statuses only when the chunk is visible.
 // - Each written summary gets a new global revision. Chunks form a doubly linked list ordered by
 //   revision (rewritten chunks move to the tail), so index_changes walks only what changed.
@@ -35,6 +37,10 @@ const DEFAULT_CHUNKS_PER_TICK = 3;
 const COST_PER_CHUNK = 100;
 /** One count_entities_filtered (empty chunk, discovery, uncharted check), µs. */
 const COST_CHECK = 10;
+/** is_chunk_generated on a sweep cell, µs. */
+const COST_SWEEP_CELL = 1;
+/** Share of each tick's budget for the discovery sweep once first-run discovery is done. */
+const SWEEP_SHARE = 0.25;
 /** Round-robin steps over tombstones per tick (they cost a table lookup each, not a summary). */
 const MAX_SKIPS_PER_TICK = 2000;
 
@@ -308,6 +314,8 @@ function summarise(
   const miners: Groups = new LuaMap();
   const entities = new LuaMap<string, number>();
   const ghosts = new LuaMap<string, number>();
+  const labStatuses = new LuaMap<string, number>();
+  const idle = new LuaMap<string, number>();
   let stops: string[] | undefined;
   let labs = 0;
   let any = false;
@@ -324,7 +332,7 @@ function summarise(
     switch (kind) {
       case Kind.Crafter: {
         const recipe = recipeName(entity);
-        if (recipe === undefined) addCount(entities, name);
+        if (recipe === undefined) addCount(idle, name);
         else addTo(crafters, name, recipe, visible ? statusName(entity.status) : undefined);
         break;
       }
@@ -333,6 +341,7 @@ function summarise(
         break;
       case Kind.Lab:
         labs++;
+        if (visible) addCount(labStatuses, statusName(entity.status));
         break;
       case Kind.TrainStop:
         addCount(entities, name);
@@ -388,6 +397,8 @@ function summarise(
     entities: sortedObject(entities) ?? {},
     train_stops: stops,
     ghosts: sortedObject(ghosts),
+    lab_statuses: sortedObject(labStatuses),
+    idle_crafters: sortedObject(idle),
   };
   // Stored without the opening brace, ready to be spliced after the per-write fields.
   return $multi(helpers.table_to_json(stored).slice(1), nextBulk, cost);
@@ -538,8 +549,78 @@ function onTick(): void {
     idx.seed_pos = 1;
   }
 
-  // 3. Round-robin refresh of everything indexed (statuses, recipe changes, missed events).
+  // 3. Discovery sweep, then round-robin refresh of everything indexed (statuses, recipe changes,
+  //    missed events).
+  if (idx.budget > 0 && idx.seed.length === 0) sweepStep(idx, force, k * SWEEP_SHARE);
   if (idx.budget > 0) roundRobinStep(idx, force, others);
+}
+
+/** Grows a surface's sweep bounds to include a generated chunk. */
+function sweepInclude(idx: FlhIndex, surfaceIndex: number, x: number, y: number): void {
+  idx.sweep ??= new LuaMap();
+  const b = idx.sweep.get(surfaceIndex);
+  if (!b) {
+    idx.sweep.set(surfaceIndex, { x1: x, y1: y, x2: x, y2: y, cx: x, cy: y });
+    return;
+  }
+  if (x < b.x1) b.x1 = x;
+  if (x > b.x2) b.x2 = x;
+  if (y < b.y1) b.y1 = y;
+  if (y > b.y2) b.y2 = y;
+}
+
+/**
+ * Walks every surface's generated-chunk bounds, row by row, looking for chunks with our entities
+ * that the index doesn't know about. Uses at most `share` of the budget (in chunks) per tick.
+ */
+function sweepStep(idx: FlhIndex, force: LuaForce, share: number): void {
+  if (!idx.sweep) return;
+  let spent = 0;
+  let wraps = 0;
+  while (spent < share && idx.budget > 0) {
+    if (idx.sweep_surface === undefined || !idx.sweep.has(idx.sweep_surface)) {
+      const [first] = next(idx.sweep as unknown as LuaTable<number, FlhIndexSweep>, idx.sweep_surface);
+      idx.sweep_surface = first;
+      // One lap over all surfaces per tick at most (tiny or empty bounds).
+      if (first === undefined && ++wraps > 1) return;
+      if (first === undefined) continue;
+    }
+    const surfaceIndex: number = idx.sweep_surface!;
+    const b = idx.sweep.get(surfaceIndex)!;
+    const surface = game.get_surface(surfaceIndex as SurfaceIndex);
+    if (!surface || !surface.valid) {
+      idx.sweep.delete(surfaceIndex);
+      idx.sweep_surface = undefined;
+      continue;
+    }
+    const [x, y] = [b.cx, b.cy];
+    b.cx++;
+    if (b.cx > b.x2) {
+      b.cx = b.x1;
+      b.cy++;
+      if (b.cy > b.y2) {
+        b.cy = b.y1;
+        // Done with this surface for this lap: move on to the next.
+        const [nextIndex] = next(idx.sweep as unknown as LuaTable<number, FlhIndexSweep>, surfaceIndex);
+        idx.sweep_surface = nextIndex;
+      }
+    }
+    let cost = COST_SWEEP_CELL;
+    if (surface.is_chunk_generated([x, y])) {
+      const local = localKey(x, y);
+      const key = globalKey(surfaceIndex, local);
+      const entry = idx.surfaces.get(surfaceIndex)?.chunks.get(local);
+      if (entry?.j === undefined && !idx.dirty.has(key) && !idx.uncharted.has(key)) {
+        cost += COST_CHECK;
+        if (hasOurs(force, surface, x, y)) {
+          if (isChunkCharted(force, surface, { x, y })) markDirtyKey(idx, surface, local);
+          else idx.uncharted.set(key, true);
+        }
+      }
+    }
+    spent += cost / COST_PER_CHUNK;
+    idx.budget -= cost / COST_PER_CHUNK;
+  }
 }
 
 // ---- Lifecycle and events ----
@@ -555,7 +636,10 @@ function seedAll(): void {
   idx.seed_pos = 1;
   for (const [, surface] of game.surfaces) {
     if (surface.name === SCRATCH_SURFACE) continue;
-    for (const chunk of surface.get_chunks()) idx.seed.push(globalKey(surface.index, localKey(chunk.x, chunk.y)));
+    for (const chunk of surface.get_chunks()) {
+      idx.seed.push(globalKey(surface.index, localKey(chunk.x, chunk.y)));
+      sweepInclude(idx, surface.index, chunk.x, chunk.y);
+    }
   }
 }
 
@@ -622,6 +706,10 @@ export function registerIndex(): void {
     if (!idx.uncharted.has(key)) return;
     idx.uncharted.delete(key);
     markDirtyKey(idx, game.get_surface(event.surface_index)!, local);
+  });
+  script.on_event(defines.events.on_chunk_generated, (event) => {
+    const idx = storage.index;
+    if (idx && event.surface.name !== SCRATCH_SURFACE) sweepInclude(idx, event.surface.index, event.position.x, event.position.y);
   });
   script.on_event(defines.events.on_chunk_deleted, (event) => {
     const idx = storage.index;
