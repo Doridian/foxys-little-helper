@@ -76,7 +76,7 @@ Dev tools:
 
 ```sh
 npm run rcon -w @flh/bridge -- '/c rcon.print(game.tick)'   # one-off console command
-npm run smoke-test -w @flh/bridge                            # builds a tiny test factory and calls every RPC
+npm run smoke-test -w @flh/bridge                            # calls every RPC against the demo world (read-only)
 npm test -w @flh/bridge                                      # planner unit tests
 npm run transcript -w @flh/bridge -- 10                      # last 10 conversations, with tool calls
 ```
