@@ -45,6 +45,23 @@ npm install
 npm run dev-server        # builds the mod, runs an isolated headless server in ./dev (RCON 27015, password flh-dev)
 ```
 
+By default the dev server starts a fresh copy of the `flh-demo` scenario
+([scripts/scenarios/flh-demo](scripts/scenarios/flh-demo/demo-factory.lua)) every time: freeplay
+with mid-game research and a small scripted test factory east of spawn, with known problems for the
+helper to find:
+
+| Section | Expected state |
+|---|---|
+| A: green circuits | Working, ~360/min from 4 direct-insertion lines |
+| B: gears | `full_output`: output chest is full |
+| C: red circuits | `item_ingredient_shortage`: plastic chest is empty |
+| D: belt smelting | 2 of 6 furnaces idle: one inserter can't supply the belt |
+| E: low power island | `low_power`: separate grid with 100 kW for ~500 kW of load |
+
+The fixture uses script-only entities (infinity chests, energy interfaces) to stay small; the
+helper itself never gets such powers. Set `FLH_SCENARIO=` (empty) to play a persistent save in
+`dev/saves` instead.
+
 In another terminal:
 
 ```sh
