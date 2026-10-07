@@ -27,6 +27,7 @@ function machine(name: string, type: MachineData["type"], categories: string[], 
     uses_beacon_effects: true,
     energy_usage_kw: 150,
     items_to_place: [name],
+    size: { width: 3, height: 3 },
     ...extra,
   };
 }

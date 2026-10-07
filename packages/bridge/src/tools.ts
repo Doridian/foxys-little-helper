@@ -3,9 +3,11 @@
 
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { ToolError } from "@anthropic-ai/sdk/lib/tools/ToolError";
-import type { RpcMethod, RpcMethods } from "@flh/protocol";
+import type { BlueprintSource, RpcMethod, RpcMethods } from "@flh/protocol";
 import { z } from "zod";
-import { GameClient, RpcError } from "./game.ts";
+import type { DesignStore } from "./designs.ts";
+import type { GameClient } from "./game.ts";
+import { assemblerRow } from "./layouts.ts";
 import type { PlannerService } from "./planner/service.ts";
 
 const position = z.object({ x: z.number(), y: z.number() });
@@ -19,14 +21,38 @@ const typeFilter = z
   .optional()
   .describe("Prototype type(s), e.g. 'assembling-machine', 'inserter', 'transport-belt'");
 
-export function createTools(game: GameClient, planner: PlannerService) {
+export interface ToolContext {
+  game: GameClient;
+  planner: PlannerService;
+  designs: DesignStore;
+  /** The player whose conversation this is: previews, dialogs and blueprints go to them. */
+  playerIndex: number;
+}
+
+const direction = z.enum(["north", "east", "south", "west"]).optional().describe("Rotation of the design (default north = as designed)");
+const designSource = {
+  design: z.string().optional().describe("Design id from list_blueprints or generate_layout"),
+  copy_area: area.optional().describe("Copy what is built in this (visible) area instead, on the same surface"),
+  blueprint_string: z.string().optional().describe("A blueprint exchange string the player pasted"),
+};
+
+export function createTools({ game, planner, designs, playerIndex }: ToolContext) {
   async function json(fn: () => Promise<unknown>): Promise<string> {
     try {
       return JSON.stringify(await fn());
     } catch (err) {
-      if (err instanceof RpcError) throw new ToolError(err.message);
+      // Errors from the mod and from our own validation are things the model can act on.
+      if (err instanceof Error) throw new ToolError(err.message);
       throw err;
     }
+  }
+
+  function source(surface: string, input: { design?: string; copy_area?: z.infer<typeof area>; blueprint_string?: string }): BlueprintSource {
+    const given = [input.design, input.copy_area, input.blueprint_string].filter((x) => x !== undefined).length;
+    if (given !== 1) throw new Error("Give exactly one of design, copy_area or blueprint_string");
+    if (input.design) return designs.source(input.design);
+    if (input.copy_area) return { kind: "copy", surface, area: input.copy_area };
+    return { kind: "string", string: input.blueprint_string! };
   }
   const rpc = <M extends RpcMethod>(method: M, params: RpcMethods[M]["params"]) => json(() => game.call(method, params));
 
@@ -134,6 +160,113 @@ Notes: \`rate\` is what the new line should produce, so to raise production to a
             allowLocked: input.allow_locked,
           }),
         ),
+    }),
+
+    // ---- Acting ----
+    betaZodTool({
+      name: "list_blueprints",
+      description:
+        "Designs available to build: blueprints in registered library chests and the player's inventory (ids like c0/3), and blueprint strings from the repo (repo:...). Each has label, description, size, entity and recipe counts.",
+      inputSchema: z.object({}),
+      run: () => json(() => designs.list(playerIndex)),
+    }),
+    betaZodTool({
+      name: "add_library_chest",
+      description: "Register a chest (by position) whose blueprints and blueprint books the helper may use, e.g. after the player marks one.",
+      inputSchema: z.object({ surface: z.string(), position }),
+      run: (input) => rpc("add_library_chest", input),
+    }),
+    betaZodTool({
+      name: "generate_layout",
+      description: `Generate a layout when no existing blueprint fits. Returns a design id for propose_build/give_blueprint plus size, notes (where to connect belts and power) and throughput.
+
+Layouts:
+- assembler_row: a row of \`count\` 3x3 machines for one recipe between an input belt (top, flows east) and an output belt (bottom, flows west), with inserters and poles. Solid recipes with at most 2 ingredients. Picks the best researched machine, inserter, belt and pole unless given.`,
+      inputSchema: z.object({
+        layout: z.enum(["assembler_row"]),
+        recipe: z.string(),
+        count: z.number().int().positive().max(40),
+        machine: z.string().optional(),
+        inserter: z.string().optional(),
+        belt: z.string().optional(),
+        pole: z.string().optional(),
+      }),
+      run: (input) =>
+        json(async () => {
+          const [data, force] = await Promise.all([planner.planner(), planner.force()]);
+          const layout = assemblerRow(data, force, input);
+          const id = designs.addGenerated(layout);
+          return { design: id, label: layout.label, width: layout.width, height: layout.height, crafts_per_min: layout.crafts_per_min, notes: layout.notes };
+        }),
+    }),
+    betaZodTool({
+      name: "find_space",
+      description: "Find the nearest free, charted, dry rectangle (trees and rocks are fine, they get cleared) of the given size near a position. Returns its top-left corner.",
+      inputSchema: z.object({
+        surface: z.string(),
+        width: z.number().positive(),
+        height: z.number().positive(),
+        near: position,
+        max_distance: z.number().positive().optional(),
+      }),
+      run: (input) => rpc("find_space", input),
+    }),
+    betaZodTool({
+      name: "propose_build",
+      description: `Show the player a preview of a build and ask for approval. Nothing is placed yet: the player sees outlines (red where blocked) and Build / Blueprint / Reject buttons, or can answer in chat (then use resolve_proposal).
+
+\`position\` is the top-left corner of the build. The result lists entity counts, blocked spots, trees/rocks to clear, total cost, and whether construction robots cover the area and what items the network lacks. Mention blockers and missing items to the player. Entities players can't build (script-only ones) are removed and reported.`,
+      inputSchema: z.object({
+        surface: z.string(),
+        position,
+        direction,
+        label: z.string().optional().describe("Short name shown on the preview"),
+        ...designSource,
+      }),
+      run: (input) =>
+        json(() =>
+          game.call("propose_build", {
+            surface: input.surface,
+            position: input.position,
+            direction: input.direction,
+            label: input.label,
+            source: source(input.surface, input),
+            player_index: playerIndex,
+          }),
+        ),
+    }),
+    betaZodTool({
+      name: "resolve_proposal",
+      description:
+        "Act on a pending proposal when the player answers in chat: approved = place the ghosts (robots build them), blueprint = put it in the player's cursor to place themselves, rejected = discard the preview.",
+      inputSchema: z.object({ id: z.number().int(), outcome: z.enum(["approved", "rejected", "blueprint"]) }),
+      run: (input) => rpc("resolve_proposal", { ...input, player_index: playerIndex }),
+    }),
+    betaZodTool({
+      name: "give_blueprint",
+      description: "Put a design into the player's cursor as a blueprint so they can place it themselves (no preview or approval needed).",
+      inputSchema: z.object({ surface: z.string().describe("Surface for copy_area"), label: z.string().optional(), ...designSource }),
+      run: (input) => json(() => game.call("give_blueprint", { player_index: playerIndex, label: input.label, source: source(input.surface, input) })),
+    }),
+    betaZodTool({
+      name: "deconstruct",
+      description:
+        "Mark the force's entities in a visible area for deconstruction by robots, optionally only certain names/types. Destructive: unless the player explicitly asked for exactly this, describe what would be removed and get a yes first.",
+      inputSchema: z.object({ surface: z.string(), area, name: nameFilter, type: typeFilter }),
+      run: (input) => rpc("deconstruct", { ...input, player_index: playerIndex }),
+    }),
+    betaZodTool({
+      name: "set_recipe",
+      description: "Change the recipe of an assembling machine (by position). Items it held are spilled next to it, not lost.",
+      inputSchema: z.object({ surface: z.string(), position, recipe: z.string() }),
+      run: (input) => rpc("set_recipe", { ...input, player_index: playerIndex }),
+    }),
+    betaZodTool({
+      name: "undo",
+      description:
+        "Undo one of your actions (default: the latest): removes ghosts not built yet and orders deconstruction of ones already built, cancels deconstruction orders, or restores a recipe.",
+      inputSchema: z.object({ action_id: z.number().int().optional() }),
+      run: (input) => rpc("undo_action", input),
     }),
   ];
 }

@@ -6,7 +6,8 @@
 #   FLH_RCON_PORT      default 27015
 #   FLH_RCON_PASSWORD  default flh-dev
 #   FLH_SCENARIO       scenario from scripts/scenarios to start fresh each run (default flh-demo);
-#                      set it empty to keep playing the persistent save in dev/saves instead
+#                      set it empty to keep playing a persistent save instead
+#   FLH_SAVE           save to load when FLH_SCENARIO is empty (default dev/saves/dev.zip; created if missing)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,7 +15,7 @@ DEV="$ROOT/dev"
 FACTORIO_BIN="${FACTORIO_BIN:-$HOME/.local/share/Steam/steamapps/common/Factorio/bin/x64/factorio}"
 RCON_PORT="${FLH_RCON_PORT:-27015}"
 RCON_PASSWORD="${FLH_RCON_PASSWORD:-flh-dev}"
-SAVE="$DEV/saves/dev.zip"
+SAVE="${FLH_SAVE:-$DEV/saves/dev.zip}"
 SCENARIO="${FLH_SCENARIO-flh-demo}"
 
 mkdir -p "$DEV/data/mods" "$DEV/data/scenarios" "$DEV/saves"

@@ -24,13 +24,13 @@ export class PlannerService {
     this.data = undefined;
   }
 
-  private planner(): Promise<PlannerData> {
+  planner(): Promise<PlannerData> {
     this.data ??= this.game.call("prototypes", {}).then((d) => new PlannerData(d));
     this.data.catch(() => (this.data = undefined));
     return this.data;
   }
 
-  private force(): Promise<ForceRecipeState> {
+  force(): Promise<ForceRecipeState> {
     return this.game.call("force_recipes", {});
   }
 

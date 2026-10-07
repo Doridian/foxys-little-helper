@@ -8,13 +8,24 @@
 --   C  Red circuits, starved         plastic input chest is empty
 --   D  Belt smelting, under-supplied 1 basic inserter feeds a belt for 6 electric furnaces
 --   E  Low power island              separate grid, 100 kW for ~500 kW of machines
+--   F  Robot network                 roboports, construction robots and a stocked storage chest,
+--                                    so builds the helper places as ghosts actually get built
 
 local FORCE = "player"
 
 local RESEARCH = {
   "automation-2", "electronics", "logistics-2", "fast-inserter", "steel-processing",
   "advanced-material-processing-2", "oil-processing", "plastics", "advanced-circuit",
-  "electric-energy-distribution-2", "electric-mining-drill", "radar",
+  "electric-energy-distribution-2", "electric-mining-drill", "radar", "construction-robotics",
+}
+
+-- What the storage chest in section F starts with: common building materials.
+local BUILDING_STOCK = {
+  ["assembling-machine-2"] = 50, ["electric-furnace"] = 20, ["inserter"] = 100, ["fast-inserter"] = 100,
+  ["long-handed-inserter"] = 50, ["transport-belt"] = 400, ["fast-transport-belt"] = 400,
+  ["underground-belt"] = 50, ["fast-underground-belt"] = 50, ["splitter"] = 20, ["fast-splitter"] = 20,
+  ["small-electric-pole"] = 50, ["medium-electric-pole"] = 100, ["substation"] = 20, ["iron-chest"] = 50,
+  ["steel-chest"] = 50, ["pipe"] = 100, ["pipe-to-ground"] = 50, ["chemical-plant"] = 10,
 }
 
 local function research(force, name)
@@ -172,6 +183,15 @@ local function low_power(surface)
   end
 end
 
+local function robot_network(surface)
+  label(surface, { 56, -20 }, "F: robot network")
+  create(surface, "substation", { 58, -4 })
+  local roboport = create(surface, "roboport", { 60, -12 })
+  roboport.insert({ name = "construction-robot", count = 50 })
+  local storage_chest = create(surface, "storage-chest", { 63.5, -12.5 })
+  for name, count in pairs(BUILDING_STOCK) do storage_chest.insert({ name = name, count = count }) end
+end
+
 local function build()
   local surface = game.surfaces.nauvis
   local force = game.forces[FORCE]
@@ -184,6 +204,7 @@ local function build()
   starved_red_circuits(surface)
   belt_smelting(surface)
   low_power(surface)
+  robot_network(surface)
 end
 
 return {

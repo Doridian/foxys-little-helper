@@ -2,7 +2,20 @@
 // Commands run inside the game tick, so everything here is deterministic and multiplayer-safe.
 
 import { RpcMethod, RpcMethods, RpcRequest, RpcResponse } from "@flh/protocol";
+import {
+  addLibraryChestRpc,
+  deconstruct,
+  findSpace,
+  giveBlueprint,
+  listBlueprints,
+  listProposals,
+  proposeBuild,
+  resolveProposalRpc,
+  setRecipe,
+  undoAction,
+} from "./actions";
 import { drainEvents, say } from "./chat";
+import { setStatusRpc } from "./ui";
 import { forceRecipes, prototypeData, surfaceInfo } from "./prototypes";
 import { findEntities, gameInfo, inspectEntity, production, statusSummary } from "./queries";
 
@@ -11,7 +24,7 @@ type Handlers = { [M in RpcMethod]: (params: RpcMethods[M]["params"]) => RpcMeth
 const handlers: Handlers = {
   poll_events: () => drainEvents(),
   say: (p) => {
-    say(p.message, p.player_index);
+    say(p.message, p.player_index, p.private);
     return true;
   },
   game_info: gameInfo,
@@ -22,6 +35,17 @@ const handlers: Handlers = {
   prototypes: prototypeData,
   force_recipes: forceRecipes,
   surface_info: surfaceInfo,
+  propose_build: proposeBuild,
+  resolve_proposal: resolveProposalRpc,
+  list_proposals: listProposals,
+  give_blueprint: giveBlueprint,
+  undo_action: undoAction,
+  deconstruct,
+  set_recipe: setRecipe,
+  find_space: findSpace,
+  add_library_chest: addLibraryChestRpc,
+  list_blueprints: listBlueprints,
+  set_status: setStatusRpc,
 };
 
 function reply(response: RpcResponse): void {

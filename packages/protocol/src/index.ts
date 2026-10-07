@@ -19,7 +19,25 @@ export type RpcResponse =
 
 export type GameEvent =
   | { type: "player_message"; tick: number; player_index: number; player_name: string; message: string }
-  | { type: "player_cancel"; tick: number; player_index: number; player_name: string };
+  | { type: "player_cancel"; tick: number; player_index: number; player_name: string }
+  | {
+      type: "area_selected";
+      tick: number;
+      player_index: number;
+      player_name: string;
+      surface: string;
+      area: Area;
+      entities: { [name: string]: number };
+    }
+  | {
+      type: "proposal_resolved";
+      tick: number;
+      player_index: number;
+      player_name: string;
+      id: number;
+      outcome: "approved" | "rejected" | "blueprint";
+      built?: number;
+    };
 
 export interface SurfaceInfo {
   name: string;
@@ -127,6 +145,7 @@ export interface MachineData {
   energy_usage_kw: number;
   surface_conditions?: SurfaceConditionData[];
   items_to_place: string[];
+  size: { width: number; height: number };
 }
 
 export interface BeaconData {
@@ -181,12 +200,114 @@ export interface SurfaceInfoData {
   tile_fluids: string[];
 }
 
+// ---- Acting: blueprints, proposals and actions ----
+
+export type Direction = "north" | "east" | "south" | "west";
+
+/** A blueprint entity as Factorio's blueprint format describes it (passed through untouched). */
+export interface BlueprintEntityData {
+  entity_number: number;
+  name: string;
+  position: Position;
+  direction?: number;
+  recipe?: string;
+  [key: string]: unknown;
+}
+
+export type BlueprintSource =
+  /** A blueprint exchange string. */
+  | { kind: "string"; string: string }
+  /** Raw blueprint entities (e.g. from a layout generator). */
+  | { kind: "entities"; entities: BlueprintEntityData[]; label?: string }
+  /** A blueprint from the in-game library (see list_blueprints). */
+  | { kind: "library"; id: string }
+  /** Copy of an existing, visible area of the factory. */
+  | { kind: "copy"; surface: string; area: Area };
+
+export type ItemCount = { name: string; quality?: string; count: number };
+
+export interface ProposalSummary {
+  id: number;
+  surface: string;
+  /** World area the build covers. */
+  area: Area;
+  entities: { [name: string]: number };
+  /** Entities dropped because players can't build them (script-only entities like infinity chests). */
+  removed_unbuildable: { [name: string]: number };
+  conflict_count: number;
+  conflicts: { name: string; position: Position }[];
+  /** Trees and rocks in the area; building marks them for deconstruction. */
+  obstacles: number;
+  cost: ItemCount[];
+  /** Whether a construction robot network covers the area, and what it lacks to build everything. */
+  construction: { covered: boolean; missing: ItemCount[] };
+}
+
+export interface ActionResult {
+  action_id: number;
+  count: number;
+}
+
+export interface LibraryBlueprint {
+  id: string;
+  label?: string;
+  description?: string;
+  /** Path of book labels containing it, if any. */
+  book?: string;
+  size: { width: number; height: number };
+  entities: { [name: string]: number };
+  recipes: { [recipe: string]: number };
+}
+
 export interface RpcMethods {
+  propose_build: {
+    params: {
+      surface: string;
+      source: BlueprintSource;
+      /** Top-left corner of the build's bounding box. */
+      position: Position;
+      direction?: Direction;
+      label?: string;
+      /** Player who sees the preview and gets the approval dialog. */
+      player_index?: number;
+    };
+    result: ProposalSummary;
+  };
+  resolve_proposal: {
+    params: { id: number; outcome: "approved" | "rejected" | "blueprint"; player_index?: number };
+    result: { built: number; action_id?: number };
+  };
+  list_proposals: { params: Record<string, never>; result: { id: number; label: string; surface: string; area: Area }[] };
+  give_blueprint: {
+    params: { player_index: number; source: BlueprintSource; label?: string };
+    result: { entities: number; removed_unbuildable: { [name: string]: number } };
+  };
+  undo_action: {
+    params: { action_id?: number };
+    result: { action_id: number; ghosts_removed: number; deconstruction_ordered: number; deconstruction_cancelled: number; recipes_restored: number };
+  };
+  deconstruct: {
+    params: { surface: string; area: Area; name?: string | string[]; type?: string | string[]; player_index?: number };
+    result: ActionResult;
+  };
+  set_recipe: {
+    params: { surface: string; position: Position; recipe: string; player_index?: number };
+    result: ActionResult & { previous?: string };
+  };
+  find_space: {
+    params: { surface: string; width: number; height: number; near: Position; max_distance?: number };
+    result: { left_top: Position; distance: number } | { not_found: true };
+  };
+  add_library_chest: { params: { surface: string; position: Position }; result: { chests: number } };
+  list_blueprints: { params: { player_index?: number }; result: LibraryBlueprint[] };
+  /** Progress of a player's request, shown in their FLH panel. `done` clears it. */
+  set_status: { params: { player_index: number; state: "thinking" | "done"; detail?: string }; result: true };
   prototypes: { params: Record<string, never>; result: PrototypeData };
   force_recipes: { params: Record<string, never>; result: ForceRecipeState };
   surface_info: { params: { surface: string }; result: SurfaceInfoData };
   poll_events: { params: Record<string, never>; result: GameEvent[] };
-  say: { params: { player_index?: number; message: string }; result: true };
+  /** Chat message from the helper; `player_index` is whose conversation it belongs to. */
+  say: { params: { player_index?: number; message: string; private?: boolean }; result: true };
   game_info: {
     params: Record<string, never>;
     result: {

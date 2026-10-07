@@ -3,6 +3,7 @@
 
 import { GameEvent } from "@flh/protocol";
 import { LuaPlayer, PlayerIndex } from "factorio:runtime";
+import { appendHistory, openAsk, setRequestStatus } from "./ui";
 
 const MAX_QUEUED_EVENTS = 100;
 const PRINT_PREFIX = "[color=255,165,0][FLH][/color] ";
@@ -12,7 +13,7 @@ function queue(): GameEvent[] {
   return storage.events;
 }
 
-function pushEvent(event: GameEvent): void {
+export function pushEvent(event: GameEvent): void {
   const events = queue();
   events.push(event);
   while (events.length > MAX_QUEUED_EVENTS) events.shift();
@@ -24,26 +25,42 @@ export function drainEvents(): GameEvent[] {
   return events;
 }
 
-export function say(message: string, playerIndex?: number): void {
-  if (playerIndex !== undefined) {
-    const player = game.get_player(playerIndex as PlayerIndex);
-    if (!player) throw `Unknown player ${playerIndex}`;
-    player.print(PRINT_PREFIX + message);
-  } else {
-    game.print(PRINT_PREFIX + message);
-  }
+/**
+ * Prints a helper message in chat (to everyone, or only to `playerIndex` when private) and adds
+ * it to that player's conversation history in the ask window.
+ */
+export function say(message: string, playerIndex?: number, isPrivate = false): void {
+  const player = playerIndex === undefined ? undefined : game.get_player(playerIndex as PlayerIndex);
+  if (playerIndex !== undefined && !player) throw `Unknown player ${playerIndex}`;
+  if (player && isPrivate) player.print(PRINT_PREFIX + message);
+  else game.print(PRINT_PREFIX + message);
+  if (player) appendHistory(player.index, "flh", message);
 }
 
-function submit(player: LuaPlayer, message: string): void {
+export function cancel(player: LuaPlayer): void {
+  const request = storage.requests?.[player.index];
+  if (request) setRequestStatus(player.index, { ...request, state: "stopping" });
+  pushEvent({ type: "player_cancel", tick: game.tick, player_index: player.index, player_name: player.name });
+}
+
+export function submit(player: LuaPlayer, message: string): void {
   const trimmed = message.trim();
   if (trimmed === "") {
-    player.print(PRINT_PREFIX + "Usage: /flh <request>, or /flh stop");
+    openAsk(player);
     return;
   }
   if (trimmed.toLowerCase() === "stop") {
-    pushEvent({ type: "player_cancel", tick: game.tick, player_index: player.index, player_name: player.name });
+    cancel(player);
     return;
   }
+  appendHistory(player.index, "you", trimmed);
+  const current = storage.requests?.[player.index];
+  setRequestStatus(player.index, {
+    text: current ? `${current.text} + ${trimmed}` : trimmed,
+    state: current?.state ?? "queued",
+    detail: current?.detail,
+    since: current?.since ?? game.tick,
+  });
   pushEvent({
     type: "player_message",
     tick: game.tick,
@@ -54,7 +71,7 @@ function submit(player: LuaPlayer, message: string): void {
 }
 
 export function registerChat(): void {
-  commands.add_command("flh", "Talk to Foxie's Little Helper. /flh <request>, or /flh stop", (event) => {
+  commands.add_command("flh", "Talk to Foxie's Little Helper. /flh <request>, /flh stop, or just /flh to open the ask window", (event) => {
     if (event.player_index === undefined) return;
     const player = game.get_player(event.player_index);
     if (player) submit(player, event.parameter ?? "");

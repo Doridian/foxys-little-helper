@@ -1,3 +1,4 @@
+import { DEFAULT_BLUEPRINT_DIR } from "./designs.ts";
 import { DEFAULT_TRANSCRIPT_DIR } from "./transcript.ts";
 
 export interface Config {
@@ -9,6 +10,7 @@ export interface Config {
   effort: "low" | "medium" | "high" | "xhigh" | "max";
   maxIterations: number;
   transcriptDir: string;
+  blueprintDir: string;
 }
 
 function env(name: string, fallback?: string): string {
@@ -27,5 +29,6 @@ export function loadConfig(): Config {
     effort: env("FLH_EFFORT", "high") as Config["effort"],
     maxIterations: Number(env("FLH_MAX_ITERATIONS", "40")),
     transcriptDir: env("FLH_TRANSCRIPT_DIR", DEFAULT_TRANSCRIPT_DIR),
+    blueprintDir: env("FLH_BLUEPRINT_DIR", DEFAULT_BLUEPRINT_DIR),
   };
 }

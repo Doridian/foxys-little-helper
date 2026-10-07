@@ -57,10 +57,13 @@ helper to find:
 | C: red circuits | `item_ingredient_shortage`: plastic chest is empty |
 | D: belt smelting | 2 of 6 furnaces idle: one inserter can't supply the belt |
 | E: low power island | `low_power`: separate grid with 100 kW for ~500 kW of load |
+| F: robot network | Roboport, 50 construction robots, storage chest with building materials; covers the free space east of the demo, so approved builds get built |
 
 The fixture uses script-only entities (infinity chests, energy interfaces) to stay small; the
-helper itself never gets such powers. Set `FLH_SCENARIO=` (empty) to play a persistent save in
-`dev/saves` instead.
+helper itself never gets such powers. Set `FLH_SCENARIO=` (empty) to play a persistent save instead
+(`FLH_SAVE`, default `dev/saves/dev.zip`). Handy for testing without a client: after someone has
+joined once (so the map is charted), `/server-save <name>` over RCON and restart with
+`FLH_SCENARIO= FLH_SAVE=dev/data/saves/<name>.zip`.
 
 In another terminal:
 
@@ -108,6 +111,31 @@ ln -s "$PWD/packages/mod/build/foxies-little-helper" ~/.factorio/mods/foxies-lit
   until someone joins. The dev server also disables `auto_pause` so the game keeps ticking.
 - Lua can't tell empty arrays from empty objects; the bridge turns `{}` from the mod back into `[]`.
 
+## In game
+
+- Talk to it with `flh, ...` in chat, `/flh ...`, or the ask window (shortcut bar button,
+  Ctrl+Shift+H, or plain `/flh`), which has a multi-line input and your conversation history.
+- A panel (top left) shows your request while it is being worked on, what the helper is doing,
+  and a Stop button.
+- The area tool (shortcut bar) marks an area: "build here", "copy this", "what's wrong in here".
+- Builds are always proposed first: you see a preview (red where blocked) and choose Build
+  (ghosts for your robots), Blueprint (into your cursor to place yourself) or Reject in the panel,
+  or answer in chat.
+
+### Designs
+
+The helper can build from:
+
+- **In-game blueprints**: blueprints/books in chests you register ("use the chest I marked as
+  your library") and in your inventory. Mods can't read the personal blueprint library.
+- **Repo blueprints**: exchange strings in [blueprints/](blueprints/README.md), one per `.txt`.
+- **Copies** of a working section of your factory.
+- **Generated layouts**: `assembler_row` (N machines between an input and an output belt) for now.
+
+Script-only entities (infinity chests etc.) are stripped from any design. Other actions: mark
+for deconstruction, change recipes, find free space, and undo (removes unbuilt ghosts, orders
+deconstruction of built ones, cancels deconstruction, restores recipes).
+
 ## Production planner
 
 `plan_production` (in `packages/bridge/src/planner/`) turns "N items/min of X on surface S" into
@@ -130,8 +158,9 @@ the numbers come from deterministic code working on prototype data exported by t
 ## Roadmap
 
 1. **Observe** (done): game info, production rates, status summaries, entity inspection.
-2. **Plan** (now): ratio solver from prototype data, gap analysis ("you make 62/min, need 100").
-3. **Act via remote view**: blueprint index, site finder, ghost placement with in-game preview and
-   approval, deconstruction orders. Bots do the building.
+2. **Plan** (done): ratio solver from prototype data, gap analysis ("you make 62/min, need 100").
+3. **Act via remote view** (now): blueprint sources, site finder, ghost placement with in-game
+   preview and approval, deconstruction, recipes, undo. Bots do the building. Next: more layout
+   generators (fluids, smelting columns, direct insertion), connecting new builds to inputs.
 4. **Embodiment**: an "LLM control" equipment-grid item that lets the helper drive a spidertron
    (autopilot, personal roboport, inventory) and possibly other vehicles.

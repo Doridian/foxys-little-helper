@@ -130,6 +130,7 @@ export function prototypeData(): RpcMethods["prototypes"]["result"] {
         energy_usage_kw: (entity.energy_usage ?? 0) * J_PER_TICK_TO_KW,
         surface_conditions: conditions(entity.surface_conditions),
         items_to_place: placedBy(entity),
+        size: { width: entity.tile_width, height: entity.tile_height },
       });
     }
   }
