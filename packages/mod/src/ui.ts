@@ -21,7 +21,7 @@ export function refreshPanel(player: LuaPlayer): void {
   const proposals = Object.values(storage.proposals ?? {}).filter((p) => p.player_index === player.index);
   if (!request && proposals.length === 0) return;
 
-  const frame = player.gui.left.add({ type: "frame", name: PANEL, caption: "Foxie's Little Helper", direction: "vertical" });
+  const frame = player.gui.left.add({ type: "frame", name: PANEL, caption: "Foxy's Little Helper", direction: "vertical" });
   frame.add({ type: "button", caption: "Ask…", tags: { flh_action: "open_ask" }, tooltip: "Open the ask window (Ctrl+Shift+H)" });
   if (request) {
     const text = request.text.length > 60 ? `${request.text.substring(0, 57)}…` : request.text;
@@ -107,7 +107,7 @@ function fillHistory(player: LuaPlayer): void {
 export function openAsk(player: LuaPlayer): void {
   let frame = player.gui.screen[ASK];
   if (!frame) {
-    frame = player.gui.screen.add({ type: "frame", name: ASK, caption: "Ask Foxie's Little Helper", direction: "vertical" });
+    frame = player.gui.screen.add({ type: "frame", name: ASK, caption: "Ask Foxy's Little Helper", direction: "vertical" });
     frame.auto_center = true;
     const pane = frame.add({ type: "scroll-pane", name: "history" });
     pane.style.maximal_height = 350;

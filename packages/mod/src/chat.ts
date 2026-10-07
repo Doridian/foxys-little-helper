@@ -71,7 +71,7 @@ export function submit(player: LuaPlayer, message: string): void {
 }
 
 export function registerChat(): void {
-  commands.add_command("flh", "Talk to Foxie's Little Helper. /flh <request>, /flh stop, or just /flh to open the ask window", (event) => {
+  commands.add_command("flh", "Talk to Foxy's Little Helper. /flh <request>, /flh stop, or just /flh to open the ask window", (event) => {
     if (event.player_index === undefined) return;
     const player = game.get_player(event.player_index);
     if (player) submit(player, event.parameter ?? "");

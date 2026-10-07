@@ -12,7 +12,7 @@
       "lua-types/5.2"
     ],
     "rootDir": "src",
-    "outDir": "build/foxies-little-helper",
+    "outDir": "build/foxys-little-helper",
     "noUncheckedIndexedAccess": false,
     "ignoreDeprecations": "6.0"
   },

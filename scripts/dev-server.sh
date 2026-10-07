@@ -32,7 +32,7 @@ write-data=$DEV/data
 INI
 
 (cd "$ROOT" && npm run build:mod)
-ln -sfn "$ROOT/packages/mod/build/foxies-little-helper" "$DEV/data/mods/foxies-little-helper"
+ln -sfn "$ROOT/packages/mod/build/foxys-little-helper" "$DEV/data/mods/foxys-little-helper"
 if [[ "${FLH_DEV_FOG_OFF:-}" == "1" ]]; then
   ln -sfn "$ROOT/scripts/dev-mods/flh-dev" "$DEV/data/mods/flh-dev"
   echo "WARNING: flh-dev loaded, fog of war is OFF for the helper (test only)" >&2
@@ -43,8 +43,8 @@ fi
 node -e '
   const fs = require("fs"); const file = process.argv[1] + "/mod-list.json";
   let list = { mods: [] }; try { list = JSON.parse(fs.readFileSync(file, "utf8")); } catch {}
-  const want = new Set(["foxies-little-helper", ...(process.argv[2] === "1" ? ["flh-dev"] : [])]);
-  list.mods = list.mods.filter((m) => m.name !== "flh-dev" && m.name !== "foxies-little-helper");
+  const want = new Set(["foxys-little-helper", ...(process.argv[2] === "1" ? ["flh-dev"] : [])]);
+  list.mods = list.mods.filter((m) => m.name !== "flh-dev" && m.name !== "foxys-little-helper");
   for (const name of want) list.mods.push({ name, enabled: true });
   fs.writeFileSync(file, JSON.stringify(list, null, 2));
 ' "$DEV/data/mods" "${FLH_DEV_FOG_OFF:-}"

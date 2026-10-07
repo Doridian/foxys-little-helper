@@ -87,7 +87,7 @@ export function isCompaction(message: BetaMessage): boolean {
  * Replaces the default summarisation prompt, so it has to ask for everything worth keeping. Live
  * numbers go stale, so they matter less than decisions, names and open threads.
  */
-export const COMPACTION_INSTRUCTIONS = `Summarise this conversation between Foxie's Little Helper (an in-game Factorio assistant) and the players, so the helper can continue it without the earlier messages. Write it as notes for the helper, not for the players.
+export const COMPACTION_INSTRUCTIONS = `Summarise this conversation between Foxy's Little Helper (an in-game Factorio assistant) and the players, so the helper can continue it without the earlier messages. Write it as notes for the helper, not for the players.
 
 Keep:
 - What each player asked for, what was answered or done, and anything still open or promised (including a question the helper asked and is waiting on).

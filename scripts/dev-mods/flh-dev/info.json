@@ -4,6 +4,6 @@
   "title": "FLH dev: fog of war off (TEST ONLY)",
   "author": "Doridian",
   "factorio_version": "2.0",
-  "description": "Test-only marker mod. When present, Foxie's Little Helper ignores fog of war so automated tests can run on servers nobody has joined. Never use in real games.",
-  "dependencies": ["foxies-little-helper"]
+  "description": "Test-only marker mod. When present, Foxy's Little Helper ignores fog of war so automated tests can run on servers nobody has joined. Never use in real games.",
+  "dependencies": ["foxys-little-helper"]
 }

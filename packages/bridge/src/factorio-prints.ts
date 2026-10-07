@@ -33,7 +33,7 @@ type Fetch = (url: string) => Promise<unknown>;
 
 async function fetchJson(url: string): Promise<unknown> {
   const res = await fetch(url, {
-    headers: { "user-agent": "foxies-little-helper (Factorio helper bot)" },
+    headers: { "user-agent": "foxys-little-helper (Factorio helper bot)" },
     signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`factorioprints.com answered ${res.status}`);

@@ -1,7 +1,7 @@
 {
-  "name": "foxies-little-helper",
+  "name": "foxys-little-helper",
   "version": "0.1.0",
-  "title": "Foxie's Little Helper",
+  "title": "Foxy's Little Helper",
   "author": "Doridian",
   "factorio_version": "2.0",
   "description": "An LLM-driven helper that plays by the same rules you do.",

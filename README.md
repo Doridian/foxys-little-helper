@@ -1,4 +1,4 @@
-# Foxie's Little Helper
+# Foxy's Little Helper
 
 An LLM-driven helper for Factorio 2.0 that plays by the same rules you do.
 
@@ -22,7 +22,7 @@ The mod enforces this, not the prompt:
 ```
 Factorio headless server                      Bridge (Node, same host)
 ┌─────────────────────────────────┐   RCON   ┌──────────────────────────────────┐
-│ mod: foxies-little-helper       │◄────────►│ RPC client (/flh-rpc <json>)     │
+│ mod: foxys-little-helper       │◄────────►│ RPC client (/flh-rpc <json>)     │
 │  /flh, "flh," chat -> event queue│          │ poll_events every 250ms          │
 │  /flh-rpc (RCON only) -> queries│          │ per-player conversations         │
 │  fairness checks                │          │ Claude tool runner + tools       │
@@ -109,7 +109,7 @@ To test with your normal client, symlink the build into your mods folder (the se
 then load the same files):
 
 ```sh
-ln -s "$PWD/packages/mod/build/foxies-little-helper" ~/.factorio/mods/foxies-little-helper
+ln -s "$PWD/packages/mod/build/foxys-little-helper" ~/.factorio/mods/foxys-little-helper
 ```
 
 ### Bridge configuration

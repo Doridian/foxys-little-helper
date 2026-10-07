@@ -112,14 +112,14 @@ function profile(raw: string): void {
 
 export function registerRpc(): void {
   // Only the server console / RCON may call these, never a player.
-  commands.add_command("flh-rpc", "Internal: used by the Foxie's Little Helper bridge over RCON.", (event) => {
+  commands.add_command("flh-rpc", "Internal: used by the Foxy's Little Helper bridge over RCON.", (event) => {
     if (event.player_index !== undefined) {
       game.get_player(event.player_index)?.print("This command is reserved for the FLH bridge.");
       return;
     }
     handle(event.parameter ?? "");
   });
-  commands.add_command("flh-rpc-profile", "Internal: times a Foxie's Little Helper RPC (dev tool).", (event) => {
+  commands.add_command("flh-rpc-profile", "Internal: times a Foxy's Little Helper RPC (dev tool).", (event) => {
     if (event.player_index !== undefined) return;
     profile(event.parameter ?? "");
   });
