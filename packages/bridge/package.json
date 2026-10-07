@@ -7,7 +7,7 @@
     "typecheck": "tsc --noEmit",
     "rcon": "tsx src/rcon-cli.ts",
     "smoke-test": "tsx src/smoke-test.ts",
-    "test": "tsx --test src/**/*.test.ts",
+    "test": "tsx --test \"src/**/*.test.ts\"",
     "transcript": "tsx src/transcript-cli.ts"
   },
   "dependencies": {

@@ -10,7 +10,7 @@ import {
   StatusSummaryRow,
   SurfaceInfo,
 } from "@flh/protocol";
-import { LuaEntity, LuaForce, LuaSurface, UnitNumber } from "factorio:runtime";
+import { LuaEntity, LuaForce, LuaSurface } from "factorio:runtime";
 import { helperForce, isPositionCharted, isPositionVisible, requireKnownSurface } from "./fairness";
 
 type Params<M extends keyof RpcMethods> = RpcMethods[M]["params"];
@@ -50,12 +50,12 @@ function recipeOf(entity: LuaEntity): string | undefined {
 
 function summarize(entity: LuaEntity): EntitySummary {
   return {
-    unit_number: entity.unit_number,
     name: entity.name,
     type: entity.type,
     position: { x: entity.position.x, y: entity.position.y },
     status: statusName(entity.status),
     recipe: recipeOf(entity),
+    moves: entity.type === "inserter" ? { from: entity.pickup_target?.name, to: entity.drop_target?.name } : undefined,
   };
 }
 
@@ -112,13 +112,19 @@ export function production(params: Params<"production">): Result<"production"> {
   const window = WINDOWS[params.window] ?? WINDOWS["10m"];
   const rows: ProductionRow[] = [];
 
-  for (const stats of [
-    force.get_item_production_statistics(surface),
-    force.get_fluid_production_statistics(surface),
-  ]) {
+  if (params.items) {
+    const unknown = params.items.filter((name) => !prototypes.item[name] && !prototypes.fluid[name]);
+    if (unknown.length > 0) throw `Unknown item or fluid: ${unknown.join(", ")}`;
+  }
+  for (const [stats, isFluidStats] of [
+    [force.get_item_production_statistics(surface), false],
+    [force.get_fluid_production_statistics(surface), true],
+  ] as const) {
     const names = new LuaSet<string>();
     if (params.items) {
-      for (const name of params.items) names.add(name);
+      // Item and fluid statistics each reject the other kind's names.
+      const known = isFluidStats ? prototypes.fluid : prototypes.item;
+      for (const name of params.items) if (known[name]) names.add(name);
     } else {
       for (const [name] of pairs(stats.input_counts)) names.add(name as string);
       for (const [name] of pairs(stats.output_counts)) names.add(name as string);
@@ -219,20 +225,12 @@ export function inspectEntity(params: Params<"inspect_entity">): Result<"inspect
   const force = helperForce();
   const surface = requireKnownSurface(force, params.surface);
 
-  let entity: LuaEntity | undefined;
-  if (params.unit_number !== undefined) {
-    entity = game.get_entity_by_unit_number(params.unit_number as UnitNumber);
-    if (entity && entity.surface !== surface) entity = undefined;
-  } else if (params.position) {
-    entity = surface.find_entities_filtered({
-      position: params.position,
-      radius: 0.5,
-      name: params.name,
-      limit: 1,
-    })[0];
-  } else {
-    throw "Provide unit_number or position";
-  }
+  const entity: LuaEntity | undefined = surface.find_entities_filtered({
+    position: params.position,
+    radius: 0.5,
+    name: params.name,
+    limit: 1,
+  })[0];
   if (!entity || !entity.valid) throw "No entity found there";
   if (!isPositionVisible(force, surface, entity.position)) {
     throw isPositionCharted(force, surface, entity.position)
@@ -262,8 +260,14 @@ export function inspectEntity(params: Params<"inspect_entity">): Result<"inspect
     }
   }
 
-  if (entity.type === "inserter" && entity.held_stack.valid_for_read) {
-    details.held_stack = { name: entity.held_stack.name, count: entity.held_stack.count };
+  if (entity.type === "inserter") {
+    if (entity.held_stack.valid_for_read) {
+      details.held_stack = { name: entity.held_stack.name, count: entity.held_stack.count };
+    }
+    const pickup = entity.pickup_position;
+    const drop = entity.drop_position;
+    details.pickup = { position: { x: pickup.x, y: pickup.y }, entity: entity.pickup_target?.name };
+    details.drop = { position: { x: drop.x, y: drop.y }, entity: entity.drop_target?.name };
   }
 
   if (entity.type === "transport-belt" || entity.type === "underground-belt" || entity.type === "splitter") {

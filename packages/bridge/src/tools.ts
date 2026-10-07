@@ -66,7 +66,7 @@ export function createTools(game: GameClient, planner: PlannerService) {
     betaZodTool({
       name: "find_entities",
       description:
-        "List entities (name, type, position, status, recipe, unit_number) in an area or radius. Only currently visible chunks are included; `skipped_not_visible` counts the rest.",
+        "List entities (name, type, position, status, recipe; for inserters `moves` = which entity they take from and put into) in an area or radius. Only currently visible chunks are included; `skipped_not_visible` counts the rest.",
       inputSchema: z.object({
         surface: z.string(),
         area: area.optional(),
@@ -81,11 +81,10 @@ export function createTools(game: GameClient, planner: PlannerService) {
     betaZodTool({
       name: "inspect_entity",
       description:
-        "Detailed live state of one entity: status, recipe, crafting progress, inventories, fluids, energy, inserter hand, belt contents. Identify it by unit_number, or by position (+ optional name).",
+        "Detailed live state of one entity at a position (from find_entities etc.): status, recipe, crafting progress, inventories, fluids, energy, belt contents, and for inserters the hand plus exact pickup/drop positions and entities. Pass `name` when several entities share a spot.",
       inputSchema: z.object({
         surface: z.string(),
-        unit_number: z.number().int().optional(),
-        position: position.optional(),
+        position,
         name: z.string().optional(),
       }),
       run: (input) => rpc("inspect_entity", input),

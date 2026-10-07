@@ -32,12 +32,13 @@ export interface SurfaceInfo {
 }
 
 export interface EntitySummary {
-  unit_number?: number;
   name: string;
   type: string;
   position: Position;
   status?: string;
   recipe?: string;
+  /** Inserters: what they take from and put into (entity names), since direction is easy to misread. */
+  moves?: { from?: string; to?: string };
 }
 
 export interface InventoryContents {
@@ -53,8 +54,10 @@ export interface EntityDetails extends EntitySummary {
   electric_network_id?: number;
   inventories?: InventoryContents;
   fluids?: { name: string; amount: number; temperature?: number }[];
-  /** For inserters: what they are holding. */
+  /** For inserters: what they are holding, and where they pick up from and drop to. */
   held_stack?: { name: string; count: number };
+  pickup?: { position: Position; entity?: string };
+  drop?: { position: Position; entity?: string };
   /** For belts: items currently on each transport line. */
   belt_lines?: { name: string; count: number }[][];
 }
@@ -215,7 +218,7 @@ export interface RpcMethods {
     result: { rows: StatusSummaryRow[]; skipped_not_visible: number };
   };
   inspect_entity: {
-    params: { surface: string; unit_number?: number; position?: Position; name?: string };
+    params: { surface: string; position: Position; name?: string };
     result: EntityDetails;
   };
 }

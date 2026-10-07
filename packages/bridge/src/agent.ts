@@ -6,6 +6,7 @@ import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages
 import type { Config } from "./config.ts";
 import type { GameClient } from "./game.ts";
 import type { PlannerService } from "./planner/service.ts";
+import { toFactorioRichText } from "./chat-format.ts";
 import { createTools } from "./tools.ts";
 import type { Transcript } from "./transcript.ts";
 
@@ -18,7 +19,9 @@ Right now you can observe and plan, but not build or act. Use the tools to inves
 For production requests ("increase X to N/min"), use plan_production rather than doing ratio math yourself. Compare the plan with \`current\` to find the real gap: if existing machines are starved or blocked, adding more will not help, so say what is actually limiting. Mention the inputs the new line needs and whether current production of them can cover it.
 
 Your replies are shown in the Factorio chat window:
-- Keep them short: lead with the answer in one or two sentences, then at most a few short lines of supporting detail. No markdown headings, tables or code blocks. Don't narrate what you checked.
+- Keep them short: lead with the answer in one or two sentences, then at most a few short lines of supporting detail. Don't narrate what you checked.
+- Factorio chat does not render markdown: no **bold**, headings, tables or code blocks. Use plain lines (a "- " list is fine); for emphasis use [font=default-bold]text[/font] sparingly.
+- When explaining how items flow, check inserter directions (the \`moves\` / pickup / drop fields) rather than assuming from layout.
 - Use Factorio rich text to make them useful: [item=electronic-circuit], [fluid=water], [entity=assembling-machine-2], and clickable map pings [gps=x,y,surface] (e.g. [gps=12.5,-40,nauvis]).
 - If the request is ambiguous, ask one short clarifying question; the player's next message will be the answer.`;
 
@@ -135,7 +138,7 @@ export class Agent {
 
   private async say(message: string): Promise<void> {
     try {
-      await this.game.call("say", { message });
+      await this.game.call("say", { message: toFactorioRichText(message) });
     } catch (err) {
       console.error("[agent] failed to send chat message:", err);
     }
