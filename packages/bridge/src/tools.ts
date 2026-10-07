@@ -10,6 +10,7 @@ import { factoryIndex } from "./factory/service.ts";
 import type { GameClient } from "./game.ts";
 import { assemblerRow } from "./layouts.ts";
 import type { PlannerService } from "./planner/service.ts";
+import { searchPlaces } from "./places.ts";
 
 const position = z.object({ x: z.number(), y: z.number() });
 const area = z.object({ left_top: position, right_bottom: position });
@@ -37,11 +38,28 @@ const designSource = {
   blueprint_string: z.string().optional().describe("A blueprint exchange string the player pasted"),
 };
 
+/**
+ * Largest tool result we hand to the model, in characters. Results stay in the conversation until
+ * the server clears them (see context.ts), and the history must not be edited afterwards, so the size
+ * is decided here, once. 24k characters of our JSON is roughly 8k tokens: room for a few hundred
+ * entities or a full plan, while a query over a megabase that would return thousands of rows becomes
+ * a short error telling the model how to narrow it instead of flooding the context.
+ */
+export const MAX_RESULT_CHARS = 24_000;
+
 export function createTools({ game, planner, designs, playerIndex }: ToolContext) {
   async function json(fn: () => Promise<unknown>): Promise<string> {
     try {
-      return JSON.stringify(await fn());
+      const text = JSON.stringify(await fn());
+      if (text.length > MAX_RESULT_CHARS) {
+        throw new ToolError(
+          `Result too large (${text.length} characters, limit ${MAX_RESULT_CHARS}). Narrow the query: a smaller area or radius, ` +
+            "filters (name, type, recipe, items, surface, text), or a lower limit; or summarise first (status_summary) and then drill into one spot.",
+        );
+      }
+      return text;
     } catch (err) {
+      if (err instanceof ToolError) throw err;
       // Errors from the mod and from our own validation are things the model can act on.
       if (err instanceof Error) throw new ToolError(err.message);
       throw err;
@@ -202,6 +220,41 @@ Then use describe_block on an id for detail.`,
       run: ({ id }) => json(() => factory.describe(id)),
     }),
     // ---- end factory index ----
+
+    // ---- Places ----
+    betaZodTool({
+      name: "list_places",
+      description:
+        "Named places: map tags players placed (their text and icon) and places players named through you (remember_place). Use it to resolve a name a player uses (\"the iron bus\", \"Gleba science\") to a surface and position/area. With `text`, returns the best matches first (every word must match the start of a word in the name or note).",
+      inputSchema: z.object({
+        text: z.string().optional().describe("Words to search for, e.g. 'iron bus'"),
+        surface: z.string().optional(),
+      }),
+      run: (input) =>
+        json(async () => {
+          if (input.text) return searchPlaces(game, input.text, { surface: input.surface });
+          return game.call("list_places", { surface: input.surface });
+        }),
+    }),
+    betaZodTool({
+      name: "remember_place",
+      description:
+        "Remember a name for a spot or area of the factory for everyone on the force (saved with the game), e.g. when a player says \"this is the Gleba science build\". Give a position or an area (charted). Remembering an existing name again moves/updates it.",
+      inputSchema: z.object({
+        name: z.string().describe("The name as the player said it"),
+        surface: z.string(),
+        position: position.optional(),
+        area: area.optional(),
+        note: z.string().optional().describe("Short note: what it is, what it makes or feeds"),
+      }),
+      run: (input) => rpc("remember_place", { ...input, player_index: playerIndex }),
+    }),
+    betaZodTool({
+      name: "forget_place",
+      description: "Forget a place remembered with remember_place, by id or name. Map tags belong to the players; they remove those on the map themselves.",
+      inputSchema: z.object({ id: z.number().int().optional(), name: z.string().optional() }),
+      run: (input) => rpc("forget_place", input),
+    }),
 
     // ---- Acting ----
     betaZodTool({

@@ -30,6 +30,21 @@ declare global {
     since: number;
   }
 
+  // ---- Places ----
+  interface FlhPlace {
+    id: number;
+    name: string;
+    surface: string;
+    /** The point, or the centre of `area`. */
+    position: Position;
+    area?: Area;
+    note?: string;
+    /** Name of the player who named it. */
+    author?: string;
+    tick: number;
+  }
+  // ---- End places ----
+
   const storage: {
     events?: GameEvent[];
     next_id?: number;
@@ -40,5 +55,8 @@ declare global {
     requests?: Record<number, FlhRequestStatus>;
     scratch?: LuaInventory;
     history?: Record<number, { from: "you" | "flh"; text: string }[]>;
+    // ---- Places ----
+    places?: Record<number, FlhPlace>;
+    next_place_id?: number;
   };
 }

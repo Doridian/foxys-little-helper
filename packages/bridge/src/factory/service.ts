@@ -6,6 +6,7 @@ import type { GameClient } from "../game.ts";
 import type { PlannerData } from "../planner/solver.ts";
 import type { PlannerService } from "../planner/service.ts";
 import { type Block, BlockIds, type ClusterOptions, DEFAULT_CLUSTER, type RecipeInfo, clusterSurface } from "./cluster.ts";
+import { placesMentioned } from "../places.ts";
 import { IndexMirror } from "./mirror.ts";
 import { type PlaceSearch, type SearchQuery, describeBlock, overview, searchBlocks } from "./search.ts";
 
@@ -185,6 +186,18 @@ const instances = new WeakMap<GameClient, FactoryIndex>();
 /** The one FactoryIndex per game connection, shared by all conversations. */
 export function factoryIndex(game: GameClient, planner?: PlannerService): FactoryIndex {
   let index = instances.get(game);
-  if (!index) instances.set(game, (index = new FactoryIndex(game, planner)));
+  if (!index) {
+    instances.set(game, (index = new FactoryIndex(game, planner)));
+    index.places = async (text) =>
+      placesMentioned(await game.call("list_places", {}), text).map((p) => ({
+        name: p.name,
+        surface: p.surface,
+        // A map tag is a point; treat it as the chunk-sized area around it.
+        area: p.area ?? {
+          left_top: { x: p.position.x - 16, y: p.position.y - 16 },
+          right_bottom: { x: p.position.x + 16, y: p.position.y + 16 },
+        },
+      }));
+  }
   return index;
 }

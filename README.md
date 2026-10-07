@@ -83,6 +83,7 @@ npm run smoke-test -w @flh/bridge                            # calls every RPC a
 npm test -w @flh/bridge                                      # planner unit tests
 npm run transcript -w @flh/bridge -- 10                      # last 10 conversations, with tool calls
 npm run ask -w @flh/bridge -- "what's broken?"               # headless: one request through the real agent (costs tokens)
+npm run ask -w @flh/bridge -- --turns "what's broken?" "fix C"  # several messages in one conversation
 ```
 
 Several dev servers can run side by side (e.g. one per git worktree) with `FLH_DEV_DIR`,
@@ -109,6 +110,18 @@ ln -s "$PWD/packages/mod/build/foxies-little-helper" ~/.factorio/mods/foxies-lit
 | `FLH_EFFORT` | `high` |
 | `FLH_MAX_ITERATIONS` | `40` |
 | `FLH_POLL_MS` | `250` |
+| `FLH_CLEAR_TRIGGER_TOKENS` / `FLH_CLEAR_KEEP` / `FLH_CLEAR_AT_LEAST_TOKENS` | `100000` / `10` / `30000` (server-side clearing of old tool results) |
+| `FLH_COMPACT_AFTER_TOKENS` / `FLH_COMPACT_DURING_TOKENS` | `50000` / `200000` (server-side compaction after / during a request) |
+
+### Conversation context
+
+Each player's conversation is kept append-only by the bridge: the model's thinking is bound to the
+exact history before it, so the bridge never trims or rewrites earlier turns. Context stays small
+through the API instead ([context.ts](packages/bridge/src/context.ts)): tool results are capped at
+24k characters when they are made (a bigger result becomes an error asking for a narrower query),
+the server clears old tool results inside very long requests, and once a request is done a
+conversation over the threshold is compacted into a summary. The transcript shows clearing and
+compactions on the usage lines.
 
 ### Gotchas
 
@@ -127,6 +140,9 @@ ln -s "$PWD/packages/mod/build/foxies-little-helper" ~/.factorio/mods/foxies-lit
 - Builds are always proposed first: you see a preview (red where blocked) and choose Build
   (ghosts for your robots), Blueprint (into your cursor to place yourself) or Reject in the panel,
   or answer in chat.
+- Name things: "call this the iron bus" (with an area marked, or about what you were just
+  discussing) and the helper remembers it for everyone on the force, saved with the game. It also
+  knows your map tags, so "what's wrong at the gleba science tag?" works.
 
 ### Designs
 

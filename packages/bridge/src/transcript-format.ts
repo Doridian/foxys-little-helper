@@ -19,6 +19,7 @@ export function formatTranscript(lines: any[], count: number, full = false): str
         for (const b of (typeof e.message.content === "string" ? [{ type: "text", text: e.message.content }] : e.message.content) as Block[]) {
           if (b.type === "text" && e.message.role === "assistant") log(`  FLH: ${b.text}`);
           else if (b.type === "tool_use") log(`  → ${b.name} ${JSON.stringify(b.input)}`);
+          else if (b.type === "compaction") log(`  (compacted: ${clip(String(b.content ?? "no summary"), 400)})`);
           else if (b.type === "tool_result") {
             const text = typeof b.content === "string" ? b.content : JSON.stringify(b.content);
             log(`    ${b.is_error ? "✗" : "←"} ${clip(text, 400)}`);
@@ -26,8 +27,11 @@ export function formatTranscript(lines: any[], count: number, full = false): str
         }
         break;
       case "usage": {
-        const u = e.usage;
-        log(`    [${e.stop_reason}; in ${u.input_tokens}, cache read ${u.cache_read_input_tokens ?? 0}, write ${u.cache_creation_input_tokens ?? 0}, out ${u.output_tokens}]`);
+        // A compaction's tokens are reported per iteration, not at the top level.
+        const u = (e.compaction && e.usage.iterations?.find((i: { type: string }) => i.type === "compaction")) || e.usage;
+        const cleared = (e.context_management?.applied_edits ?? []).map((a: { cleared_input_tokens?: number; cleared_tool_uses?: number }) => `; cleared ${a.cleared_tool_uses} tool uses / ${a.cleared_input_tokens} tokens`);
+        const dropped = e.input_transformations ? `; THINKING TRANSFORMED ${JSON.stringify(e.input_transformations)}` : "";
+        log(`    [${e.compaction ? "compaction" : e.stop_reason}; in ${u.input_tokens}, cache read ${u.cache_read_input_tokens ?? 0}, write ${u.cache_creation_input_tokens ?? 0}, out ${u.output_tokens}${cleared.join("")}${dropped}]`);
         break;
       }
       case "error":

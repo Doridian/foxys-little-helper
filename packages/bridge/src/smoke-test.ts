@@ -23,6 +23,7 @@ await show("bad_surface", game.call("production", { surface: "gleba", window: "1
 await show("force_recipes", game.call("force_recipes", {}).then((f) => ({ ...f, enabled_recipes: f.enabled_recipes.length })));
 await show("surface_info", game.call("surface_info", { surface: "vulcanus" }));
 await show("prototypes", game.call("prototypes", {}).then((p) => Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v.length]))));
+await show("list_places", game.call("list_places", {}));
 await show("poll_events", game.call("poll_events", {}));
 await show("say", game.call("say", { message: "hello from the smoke test" }));
 rcon.close();

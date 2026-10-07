@@ -17,6 +17,7 @@ import {
 import { drainEvents, say } from "./chat";
 import { indexChanges, indexStatus } from "./factory-index";
 import { setStatusRpc } from "./ui";
+import { forgetPlace, listPlaces, rememberPlace } from "./places";
 import { forceRecipes, prototypeData, surfaceInfo } from "./prototypes";
 import { findEntities, gameInfo, inspectEntity, production, statusSummary } from "./queries";
 
@@ -49,6 +50,10 @@ const handlers: Handlers = {
   set_status: setStatusRpc,
   index_status: indexStatus,
   index_changes: indexChanges,
+  // ---- Places ----
+  list_places: listPlaces,
+  remember_place: rememberPlace,
+  forget_place: forgetPlace,
 };
 
 function reply(response: RpcResponse): void {

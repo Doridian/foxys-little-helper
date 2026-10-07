@@ -39,6 +39,41 @@ export type GameEvent =
       built?: number;
     };
 
+// ---- Places ----
+
+/** A named spot: a map tag a player placed, or a place a player named through the helper. */
+export interface Place {
+  source: "map_tag" | "remembered";
+  /** Remembered places only; pass to forget_place. */
+  id?: number;
+  name: string;
+  surface: string;
+  /** The tag's position, or the centre of `area`. */
+  position: Position;
+  area?: Area;
+  note?: string;
+  /** Map tag icon as rich text, e.g. "[item=iron-plate]". */
+  icon?: string;
+  /** Player who placed the tag / named the place. */
+  author?: string;
+  tick?: number;
+}
+
+// Merged into the main RpcMethods interface below (TypeScript declaration merging).
+export interface RpcMethods {
+  /** Map tags of the helper force plus remembered places, optionally filtered (text: case-insensitive substring of name or note). */
+  list_places: { params: { surface?: string; text?: string }; result: Place[] };
+  /** Remember a named position or area for everyone on the force. Same name again (any case) moves it, keeping the note unless a new one is given. */
+  remember_place: {
+    params: { name: string; surface: string; position?: Position; area?: Area; note?: string; player_index?: number };
+    result: { place: Place; replaced?: Place };
+  };
+  /** Forget remembered places by id or exact name (case-insensitive). Map tags are the players' to remove. */
+  forget_place: { params: { id?: number; name?: string }; result: { forgotten: Place[] } };
+}
+
+// ---- End places ----
+
 export interface SurfaceInfo {
   name: string;
   /** Planet name if this surface belongs to a planet. */
