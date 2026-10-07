@@ -60,7 +60,11 @@ helper to find:
 | F: robot network | Roboport, 50 construction robots, storage chest with building materials; covers the free space east of the demo, so approved builds get built |
 
 The fixture uses script-only entities (infinity chests, energy interfaces) to stay small; the
-helper itself never gets such powers. Set `FLH_SCENARIO=` (empty) to play a persistent save instead
+helper itself never gets such powers.
+
+For scale and performance testing, `FLH_SCENARIO=flh-megabase` builds a ~265k entity factory of
+48 production blocks (mines, smelting, oil, circuits, science, labs, trains, robots) with ten
+broken blocks whose causes are known; see [its README](scripts/scenarios/flh-megabase/README.md). Set `FLH_SCENARIO=` (empty) to play a persistent save instead
 (`FLH_SAVE`, default `dev/saves/dev.zip`). Handy for testing without a client: after someone has
 joined once (so the map is charted), `/server-save <name>` over RCON and restart with
 `FLH_SCENARIO= FLH_SAVE=dev/data/saves/<name>.zip`.
@@ -84,7 +88,14 @@ npm test -w @flh/bridge                                      # planner unit test
 npm run transcript -w @flh/bridge -- 10                      # last 10 conversations, with tool calls
 npm run ask -w @flh/bridge -- "what's broken?"               # headless: one request through the real agent (costs tokens)
 npm run ask -w @flh/bridge -- --turns "what's broken?" "fix C"  # several messages in one conversation
+npm run rcon -w @flh/bridge -- '/flh-rpc-profile {"method":"find_entities","params":{...},"runs":5}'  # time one RPC
 ```
+
+Every RPC runs inside a single game tick, so each one is bounded to stay in the tens of
+milliseconds even on a megabase: entity queries cover at most 512x512 tiles (radius 256) and
+look at most at 5000 entities, designs have at most 1500 entities, and whole-surface scans are
+refused in favour of the factory index. The limits live at the top of
+[queries.ts](packages/mod/src/queries.ts) (and in the tool descriptions).
 
 Several dev servers can run side by side (e.g. one per git worktree) with `FLH_DEV_DIR`,
 `FLH_GAME_PORT` and `FLH_RCON_PORT`. `FLH_DEV_FOG_OFF=1` additionally loads the test-only

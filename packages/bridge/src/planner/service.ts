@@ -10,8 +10,12 @@ const round = (n: number) => (Math.abs(n) >= 100 ? Math.round(n) : Math.round(n 
 export interface CurrentState {
   /** Produced/consumed per minute on the surface for every item the plan touches (10 minute average). */
   rates: { name: string; produced_per_min: number; consumed_per_min: number }[];
-  /** Existing machines per recipe on the surface (visible chunks only), with status counts. */
-  existing_machines: { recipe: string; count: number; statuses: Record<string, number> }[];
+  /**
+   * Existing machines per recipe, with status counts. Not filled in yet: the mod refuses
+   * whole-surface scans (they stall big bases); the factory index will answer this.
+   */
+  existing_machines?: { recipe: string; count: number; statuses: Record<string, number> }[];
+  existing_machines_hint?: string;
 }
 
 export class PlannerService {
@@ -57,23 +61,11 @@ export class PlannerService {
   private async current(surface: string, p: Plan): Promise<CurrentState> {
     const items = new Set<string>([p.item]);
     for (const s of p.steps) for (const x of [...s.inputs, ...s.outputs]) items.add(x.name);
-    const recipes = new Set(p.steps.map((s) => s.recipe));
 
-    const [rates, summary] = await Promise.all([
-      this.game.call("production", { surface, items: [...items], window: "10m" }),
-      this.game.call("status_summary", { surface, type: ["assembling-machine", "furnace"] }),
-    ]);
-    const existing = new Map<string, CurrentState["existing_machines"][number]>();
-    for (const row of summary.rows) {
-      if (!row.recipe || !recipes.has(row.recipe)) continue;
-      let entry = existing.get(row.recipe);
-      if (!entry) existing.set(row.recipe, (entry = { recipe: row.recipe, count: 0, statuses: {} }));
-      entry.count += row.count;
-      entry.statuses[row.status] = (entry.statuses[row.status] ?? 0) + row.count;
-    }
+    const rates = await this.game.call("production", { surface, items: [...items], window: "10m" });
     return {
       rates: rates.map((r) => ({ name: r.name, produced_per_min: round(r.produced_per_min), consumed_per_min: round(r.consumed_per_min) })),
-      existing_machines: [...existing.values()],
+      existing_machines_hint: "Use search_factory to find existing machines for these recipes",
     };
   }
 }

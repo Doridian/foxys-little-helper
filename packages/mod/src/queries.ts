@@ -2,16 +2,27 @@
 // returned for chunks the force can currently see (radar coverage / nearby players).
 
 import {
+  Area,
   EntityDetails,
   EntitySummary,
   InventoryContents,
+  Position,
   ProductionRow,
   RpcMethods,
   StatusSummaryRow,
   SurfaceInfo,
 } from "@flh/protocol";
-import { LuaEntity, LuaForce, LuaSurface } from "factorio:runtime";
-import { helperForce, isChunkCharted, isChunkVisible, isPositionCharted, isPositionVisible, requireKnownSurface } from "./fairness";
+import { LuaEntity } from "factorio:runtime";
+import {
+  chunkKey,
+  helperForce,
+  hiddenChunksIn,
+  isChunkCharted,
+  isChunkVisible,
+  isPositionCharted,
+  isPositionVisible,
+  requireKnownSurface,
+} from "./fairness";
 
 type Params<M extends keyof RpcMethods> = RpcMethods[M]["params"];
 type Result<M extends keyof RpcMethods> = RpcMethods[M]["result"];
@@ -19,6 +30,68 @@ type Result<M extends keyof RpcMethods> = RpcMethods[M]["result"];
 const DEFAULT_FIND_LIMIT = 200;
 const MAX_FIND_LIMIT = 1000;
 const STATUS_EXAMPLES = 3;
+
+// ---- Bounds: every RPC runs inside one game tick, so none may scan a whole megabase. ----
+// Measured on scripts/scenarios/flh-megabase; keep the tool descriptions in the bridge in sync.
+
+/** Largest area (tiles per side) one entity query covers; radius queries at most half of it. */
+export const MAX_AREA_SIZE = 512;
+/** Most entities one query looks at in Lua (engine-side counting is much cheaper). */
+export const MAX_ENTITIES = 5000;
+/** Chunks game_info iterates over all surfaces together (~1 us each with the chart checks). */
+const GAME_INFO_CHUNK_BUDGET = 12000;
+const OVERVIEW_HINT = "; for the whole factory use factory_overview / search_factory, which answer from the factory index";
+
+/** How far entities found by an area/radius query may stick out of it (biggest entity, rounded up). */
+const ENTITY_REACH = 16;
+
+interface Region {
+  /** Where entities found by the query can be, for visibility checks. */
+  box: Area;
+  /** The area or position/radius part of a find_entities_filtered filter. */
+  filter: { area?: [Position, Position]; position?: Position; radius?: number };
+}
+
+function grow(area: Area, by: number): Area {
+  return {
+    left_top: { x: area.left_top.x - by, y: area.left_top.y - by },
+    right_bottom: { x: area.right_bottom.x + by, y: area.right_bottom.y + by },
+  };
+}
+
+/**
+ * The area (or with `circle`, position + radius) a query covers; refuses whole-surface queries and
+ * oversized areas. Read-only queries (`overview`) point the model at the factory index instead.
+ */
+export function boundedRegion(
+  params: { area?: Area; position?: Position; radius?: number },
+  what: string,
+  { circle = true, overview = true } = {},
+): Region {
+  const hint = overview ? OVERVIEW_HINT : "";
+  if (params.area) {
+    const { left_top: a, right_bottom: b } = params.area;
+    const box = {
+      left_top: { x: math.min(a.x, b.x), y: math.min(a.y, b.y) },
+      right_bottom: { x: math.max(a.x, b.x), y: math.max(a.y, b.y) },
+    };
+    const width = math.ceil(box.right_bottom.x - box.left_top.x);
+    const height = math.ceil(box.right_bottom.y - box.left_top.y);
+    if (width > MAX_AREA_SIZE || height > MAX_AREA_SIZE) {
+      throw `That area is ${width}x${height} tiles, but ${what} covers at most ${MAX_AREA_SIZE}x${MAX_AREA_SIZE} at a time: split it up${hint}`;
+    }
+    return { box: grow(box, ENTITY_REACH), filter: { area: [box.left_top, box.right_bottom] } };
+  }
+  if (circle && params.position) {
+    const radius = params.radius ?? 0;
+    if (radius > MAX_AREA_SIZE / 2) {
+      throw `${what} searches a radius of at most ${MAX_AREA_SIZE / 2} tiles: use a smaller radius${hint}`;
+    }
+    const p = params.position;
+    return { box: grow({ left_top: p, right_bottom: p }, radius + ENTITY_REACH), filter: { position: p, radius: params.radius } };
+  }
+  throw `${what} needs an area (at most ${MAX_AREA_SIZE}x${MAX_AREA_SIZE} tiles)${circle ? " or a position and radius" : ""}${hint}`;
+}
 
 function newLuaSet<T extends AnyNotNil>(...values: T[]): LuaSet<T> {
   const set = new LuaSet<T>();
@@ -62,10 +135,18 @@ function summarize(entity: LuaEntity): EntitySummary {
 export function gameInfo(): Result<"game_info"> {
   const force = helperForce();
   const surfaces: SurfaceInfo[] = [];
+  const perSurface = math.max(256, math.floor(GAME_INFO_CHUNK_BUDGET / game.surfaces.length()));
   for (const [, surface] of game.surfaces) {
+    if (force.get_surface_hidden(surface)) continue; // e.g. the helper's own scratch surface
     let charted = 0;
     let visible = 0;
+    let scanned = 0;
+    let partial = false;
     for (const chunk of surface.get_chunks()) {
+      if (++scanned > perSurface) {
+        partial = true;
+        break;
+      }
       if (isChunkCharted(force, surface, chunk)) {
         charted++;
         if (isChunkVisible(force, surface, chunk)) visible++;
@@ -78,6 +159,7 @@ export function gameInfo(): Result<"game_info"> {
       platform: surface.platform?.name,
       charted_chunks: charted,
       visible_chunks: visible,
+      counts_partial: partial || undefined,
     });
   }
   const players: Result<"game_info">["players"] = [];
@@ -145,48 +227,78 @@ export function production(params: Params<"production">): Result<"production"> {
   return rows.slice(0, limit);
 }
 
-function findVisible(
-  force: LuaForce,
-  surface: LuaSurface,
-  filter: Params<"find_entities">,
-): { entities: LuaEntity[]; skipped: number } {
-  const found = surface.find_entities_filtered({
-    area: filter.area ? [filter.area.left_top, filter.area.right_bottom] : undefined,
-    position: filter.position,
-    radius: filter.radius,
-    name: filter.name as string | string[] | undefined,
-    type: filter.type as string | string[] | undefined,
-    force: filter.all_forces ? undefined : force,
-  });
-  const entities: LuaEntity[] = [];
-  let skipped = 0;
-  for (const entity of found) {
-    if (isPositionVisible(force, surface, entity.position)) entities.push(entity);
-    else skipped++;
-  }
-  return { entities, skipped };
-}
-
 export function findEntities(params: Params<"find_entities">): Result<"find_entities"> {
   const force = helperForce();
   const surface = requireKnownSurface(force, params.surface);
   const limit = math.min(params.limit ?? DEFAULT_FIND_LIMIT, MAX_FIND_LIMIT);
-  const { entities, skipped } = findVisible(force, surface, params);
+  const region = boundedRegion(params, "find_entities");
+  const filter = {
+    ...region.filter,
+    name: params.name as string | string[] | undefined,
+    type: params.type as string | string[] | undefined,
+    force: params.all_forces ? undefined : force,
+  };
+  const hidden = hiddenChunksIn(force, surface, region.box);
+  // All visible (the usual case): let the engine stop at the limit. Otherwise look at up to
+  // MAX_ENTITIES and leave out those in chunks the force can't see.
+  const found = surface.find_entities_filtered({ ...filter, limit: hidden ? MAX_ENTITIES + 1 : limit + 1 });
   const result: EntitySummary[] = [];
-  for (const entity of entities) {
-    if (result.length >= limit) break;
-    result.push(summarize(entity));
+  let skipped = 0;
+  let truncated = found.length > (hidden ? MAX_ENTITIES : limit);
+  for (let i = 0; i < math.min(found.length, MAX_ENTITIES); i++) {
+    const entity = found[i];
+    if (hidden?.has(chunkKey(entity.position))) skipped++;
+    else if (result.length < limit) result.push(summarize(entity));
+    else truncated = true;
   }
-  return { entities: result, truncated: entities.length > limit, skipped_not_visible: skipped };
+  // Engine-side count, so the model knows how much it is not seeing.
+  const total = truncated ? surface.count_entities_filtered(filter) : undefined;
+  return { entities: result, truncated, total, skipped_not_visible: skipped };
+}
+
+const STATUS_TYPE_CANDIDATES = [
+  "assembling-machine", "furnace", "rocket-silo", "mining-drill", "lab", "inserter", "boiler", "generator",
+  "burner-generator", "reactor", "fusion-reactor", "fusion-generator", "beacon", "roboport", "radar", "pump",
+  "offshore-pump", "agricultural-tower", "asteroid-collector", "ammo-turret", "electric-turret", "fluid-turret",
+  "artillery-turret", "thruster", "lightning-attractor", "cargo-landing-pad", "space-platform-hub", "train-stop",
+];
+let statusTypes: string[] | undefined;
+/** Entity types with a meaningful status: machines, not belts, poles, pipes or chests. */
+function statusTypeList(): string[] {
+  if (!statusTypes) {
+    const existing = new LuaSet<string>();
+    for (const [, prototype] of prototypes.entity) existing.add(prototype.type);
+    statusTypes = STATUS_TYPE_CANDIDATES.filter((type) => existing.has(type));
+  }
+  return statusTypes;
 }
 
 export function statusSummary(params: Params<"status_summary">): Result<"status_summary"> {
   const force = helperForce();
   const surface = requireKnownSurface(force, params.surface);
-  const { entities, skipped } = findVisible(force, surface, params);
+  const region = boundedRegion(params, "status_summary", { circle: false });
+  let type = params.type as string | string[] | undefined;
+  if (type === undefined && params.name === undefined) {
+    type = params.recipe ? ["assembling-machine", "furnace", "rocket-silo"] : statusTypeList();
+  }
+  const entities = surface.find_entities_filtered({
+    ...region.filter,
+    name: params.name as string | string[] | undefined,
+    type,
+    force,
+    limit: MAX_ENTITIES + 1,
+  });
+  if (entities.length > MAX_ENTITIES) {
+    throw `More than ${MAX_ENTITIES} matching entities in that area: use a smaller area or filter by name, type or recipe${OVERVIEW_HINT}`;
+  }
+  const hidden = hiddenChunksIn(force, surface, region.box);
+  let skipped = 0;
   const rows = new LuaMap<string, StatusSummaryRow>();
   for (const entity of entities) {
-    if (entity.force !== force) continue;
+    if (hidden?.has(chunkKey(entity.position))) {
+      skipped++;
+      continue;
+    }
     const recipe = recipeOf(entity);
     if (params.recipe && recipe !== params.recipe) continue;
     const status = statusName(entity.status) ?? "none";

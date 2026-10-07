@@ -3,11 +3,12 @@
 // handed to a player's cursor. Builds are proposed first, previewed, and only placed on approval.
 
 import { ActionResult, ItemCount, Position, ProposalSummary, RpcMethods } from "@flh/protocol";
-import { LuaEntity, LuaPlayer, LuaSurface, PlayerIndex } from "factorio:runtime";
-import { DIRECTIONS, addLibraryChest, dryRun, listLibrary, loadSource, nextId, requireCharted, requireVisible, scratchStack } from "./blueprints";
+import { LuaEntity, LuaItemStack, LuaPlayer, LuaSurface, PlayerIndex } from "factorio:runtime";
+import { DIRECTIONS, addLibraryChest, dryRun, listLibrary, loadSource, nextId, requireCharted, requireVisible } from "./blueprints";
 import { pushEvent, say } from "./chat";
 import { markEntityDirty } from "./factory-index";
-import { helperForce, isPositionVisible, requireKnownSurface } from "./fairness";
+import { chunkKey, helperForce, isPositionCharted, isPositionVisible, requireKnownSurface } from "./fairness";
+import { MAX_ENTITIES, boundedRegion } from "./queries";
 import { refreshPanel } from "./ui";
 
 type Params<M extends keyof RpcMethods> = RpcMethods[M]["params"];
@@ -69,9 +70,9 @@ export function proposeBuild(params: Params<"propose_build">): Result<"propose_b
   const force = helperForce();
   const surface = requireKnownSurface(force, params.surface);
   const requester = player(params.player_index);
-  const { stack, removed } = loadSource(params.source, requester, params.label);
+  const { stack, removed, entities } = loadSource(params.source, requester, params.label);
   const direction = DIRECTIONS[params.direction ?? "north"];
-  const { ghosts, bbox } = dryRun(stack, direction);
+  const { ghosts, bbox } = dryRun(stack, direction, entities);
 
   // Shift so the build's bounding box starts at the requested top-left tile.
   const offset = {
@@ -160,13 +161,15 @@ export function proposeBuild(params: Params<"propose_build">): Result<"propose_b
     count: c.count,
   }));
 
+  const design = game.create_inventory(1);
+  if (!design[0]!.set_stack(stack)) throw "Could not store the design";
   storage.proposals ??= {};
   storage.proposals[id] = {
     id,
     label,
     player_index: params.player_index,
     surface: surface.name,
-    blueprint: stack.export_stack(),
+    design,
     build_position: offset,
     direction,
     area,
@@ -193,9 +196,15 @@ export function proposeBuild(params: Params<"propose_build">): Result<"propose_b
 
 function dropProposal(proposal: FlhProposal): void {
   for (const id of proposal.renders) rendering.get_object_by_id(id)?.destroy();
+  if (proposal.design?.valid) proposal.design.destroy();
   delete storage.proposals![proposal.id];
   const requester = player(proposal.player_index);
   if (requester) refreshPanel(requester);
+}
+
+function proposalStack(proposal: FlhProposal): LuaItemStack {
+  if (!proposal.design?.valid) throw `Proposal #${proposal.id} was made by an older version; propose it again`;
+  return proposal.design[0]!;
 }
 
 function getProposal(id: number): FlhProposal {
@@ -208,9 +217,7 @@ function getProposal(id: number): FlhProposal {
 function buildProposal(proposal: FlhProposal, byPlayer?: LuaPlayer): { built: number; action_id: number } {
   const surface = game.get_surface(proposal.surface);
   if (!surface) throw "That surface no longer exists";
-  const stack = scratchStack(0);
-  stack.clear();
-  stack.import_stack(proposal.blueprint);
+  const stack = proposalStack(proposal);
   const ghosts = stack.build_blueprint({
     surface,
     force: helperForce(),
@@ -220,7 +227,6 @@ function buildProposal(proposal: FlhProposal, byPlayer?: LuaPlayer): { built: nu
     by_player: byPlayer?.connected ? byPlayer : undefined,
     raise_built: true,
   });
-  stack.clear();
   const placed = ghosts
     .filter((g) => g.valid && g.type === "entity-ghost")
     .map((g) => ({ name: g.ghost_name, position: { x: g.position.x, y: g.position.y } }));
@@ -240,7 +246,7 @@ export function resolveProposal(id: number, outcome: ProposalOutcome, by?: LuaPl
   } else if (outcome === "blueprint") {
     const target = by ?? player(proposal.player_index);
     if (!target) throw "No player to hand the blueprint to";
-    giveStack(target, proposal.blueprint);
+    giveStack(target, proposalStack(proposal));
   }
   dropProposal(proposal);
   const actor = by ?? player(proposal.player_index);
@@ -268,10 +274,10 @@ export function listProposals(): Result<"list_proposals"> {
 
 // ---- Blueprints in the cursor ----
 
-function giveStack(target: LuaPlayer, blueprint: string): void {
+function giveStack(target: LuaPlayer, blueprint: LuaItemStack): void {
   if (!target.connected) throw `${target.name} is not connected`;
   if (!target.clear_cursor()) throw `${target.name}'s cursor is busy and their inventory is full`;
-  if (target.cursor_stack?.import_stack(blueprint) === 1) throw "Could not create the blueprint";
+  if (!target.cursor_stack?.set_stack(blueprint)) throw "Could not create the blueprint";
 }
 
 export function giveBlueprint(params: Params<"give_blueprint">): Result<"give_blueprint"> {
@@ -279,7 +285,7 @@ export function giveBlueprint(params: Params<"give_blueprint">): Result<"give_bl
   if (!target) throw "Unknown player";
   const { stack, removed } = loadSource(params.source, target, params.label);
   const entities = stack.get_blueprint_entity_count();
-  giveStack(target, stack.export_stack());
+  giveStack(target, stack);
   stack.clear();
   return { entities, removed_unbuildable: removed };
 }
@@ -328,13 +334,18 @@ export function undoAction(params: Params<"undo_action">): Result<"undo_action">
 export function deconstruct(params: Params<"deconstruct">): Result<"deconstruct"> {
   const force = helperForce();
   const surface = requireKnownSurface(force, params.surface);
+  const region = boundedRegion(params, "deconstruct", { circle: false, overview: false });
   requireVisible(surface, params.area);
   const entities = surface.find_entities_filtered({
-    area: [params.area.left_top, params.area.right_bottom],
+    ...region.filter,
     force,
     name: params.name as string | string[] | undefined,
     type: params.type as string | string[] | undefined,
+    limit: MAX_ENTITIES + 1,
   });
+  if (entities.length > MAX_ENTITIES) {
+    throw `More than ${MAX_ENTITIES} entities match in that area: deconstruct it in parts or filter by name/type`;
+  }
   const marked: LuaEntity[] = [];
   const by = player(params.player_index);
   for (const entity of entities) {
@@ -368,27 +379,49 @@ export function setRecipe(params: Params<"set_recipe">): Result<"set_recipe"> {
 
 // ---- Finding room ----
 
-/** Spirals outwards from `near` for a charted, dry, empty (trees and rocks are fine) rectangle. */
+/** Candidate spots find_space checks at most (each costs a few engine queries). */
+const MAX_SPACE_CANDIDATES = 1500;
+/** Largest rectangle find_space looks for, per side. */
+const MAX_SPACE_SIZE = 256;
+
+/**
+ * Spirals outwards from `near` for a charted, dry, empty (trees and rocks are fine) rectangle.
+ * The spiral's step grows with the search distance so that at most MAX_SPACE_CANDIDATES spots
+ * are checked.
+ */
 export function findSpace(params: Params<"find_space">): Result<"find_space"> {
   const force = helperForce();
   const surface = requireKnownSurface(force, params.surface);
   const width = math.ceil(params.width);
   const height = math.ceil(params.height);
+  if (width > MAX_SPACE_SIZE || height > MAX_SPACE_SIZE) throw `find_space looks for at most ${MAX_SPACE_SIZE}x${MAX_SPACE_SIZE} tiles`;
   const maxDistance = math.min(params.max_distance ?? 150, 400);
-  const step = math.max(2, math.floor(math.min(width, height) / 2));
+  const maxRings = math.floor((math.sqrt(MAX_SPACE_CANDIDATES) - 1) / 2);
+  const step = math.max(2, math.floor(math.min(width, height) / 2), math.ceil(maxDistance / maxRings));
   const cx = math.floor(params.near.x - width / 2);
   const cy = math.floor(params.near.y - height / 2);
 
-  const fits = (x: number, y: number): boolean => {
-    const area = { left_top: { x, y }, right_bottom: { x: x + width, y: y + height } };
-    try {
-      requireCharted(surface, area);
-    } catch {
-      return false;
+  // Neighbouring candidates share chunks: check each chunk's chart state once.
+  const charted = new LuaMap<number, boolean>();
+  const isCharted = (x: number, y: number): boolean => {
+    const key = chunkKey({ x, y });
+    let known = charted.get(key);
+    if (known === undefined) {
+      known = isPositionCharted(force, surface, { x, y });
+      charted.set(key, known);
     }
-    const box: [Position, Position] = [area.left_top, area.right_bottom];
-    if (surface.count_tiles_filtered({ area: box, collision_mask: "water_tile", limit: 1 }) > 0) return false;
+    return known;
+  };
+  const fits = (x: number, y: number): boolean => {
+    for (let px = x; px < x + width + 31; px += 32) {
+      for (let py = y; py < y + height + 31; py += 32) {
+        if (!isCharted(math.min(px, x + width - 1), math.min(py, y + height - 1))) return false;
+      }
+    }
+    const box: [Position, Position] = [{ x, y }, { x: x + width, y: y + height }];
+    // Entities first: in a built-up area that fails fast (limit 1).
     if (surface.count_entities_filtered({ area: box, type: ["tree", "simple-entity", "fish", "corpse", "resource", "item-entity"], invert: true, limit: 1 }) > 0) return false;
+    if (surface.count_tiles_filtered({ area: box, collision_mask: "water_tile", limit: 1 }) > 0) return false;
     return true;
   };
 

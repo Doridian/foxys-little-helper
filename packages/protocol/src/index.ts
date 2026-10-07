@@ -82,6 +82,8 @@ export interface SurfaceInfo {
   platform?: string;
   charted_chunks: number;
   visible_chunks: number;
+  /** Only part of the surface's chunks were counted (large map), so the counts are lower bounds. */
+  counts_partial?: boolean;
 }
 
 export interface EntitySummary {
@@ -292,6 +294,9 @@ export interface LibraryBlueprint {
   size: { width: number; height: number };
   entities: { [name: string]: number };
   recipes: { [recipe: string]: number };
+  entity_count?: number;
+  /** Size, entities and recipes were skipped: too big to build, or the library is too large to summarise at once. */
+  details_omitted?: boolean;
 }
 
 // ---- Factory index (mod maintains per-chunk summaries; bridge mirrors them and builds blocks) ----
@@ -425,6 +430,7 @@ export interface RpcMethods {
     params: { surface: string; items?: string[]; window: "1m" | "10m" | "1h"; limit?: number };
     result: ProductionRow[];
   };
+  /** Needs `area` (at most 512x512 tiles) or `position` (+ `radius` up to 256); never the whole surface. */
   find_entities: {
     params: {
       surface: string;
@@ -437,8 +443,13 @@ export interface RpcMethods {
       /** Also include entities of other forces: trees, rocks, enemies (default: only our own). */
       all_forces?: boolean;
     };
-    result: { entities: EntitySummary[]; truncated: boolean; skipped_not_visible: number };
+    /** `total`: all matches (engine count, including not visible ones), only given when truncated. */
+    result: { entities: EntitySummary[]; truncated: boolean; total?: number; skipped_not_visible: number };
   };
+  /**
+   * Needs `area` (at most 512x512 tiles) and refuses more than 5000 matching entities. Without
+   * name/type only entity types that have a status are included (machines, inserters, ...).
+   */
   status_summary: {
     params: { surface: string; area?: Area; name?: string | string[]; type?: string | string[]; recipe?: string };
     result: { rows: StatusSummaryRow[]; skipped_not_visible: number };

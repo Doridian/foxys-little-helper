@@ -7,8 +7,8 @@ declare global {
     label: string;
     player_index?: number;
     surface: string;
-    /** Exported (already fairness-filtered) blueprint. */
-    blueprint: string;
+    /** One-slot inventory holding the (already fairness-filtered) blueprint; cheaper than a string. */
+    design: LuaInventory;
     /** Where build_blueprint must be called to land on the previewed spot. */
     build_position: Position;
     direction: number;

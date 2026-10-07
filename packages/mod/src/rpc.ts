@@ -82,13 +82,43 @@ function handle(raw: string): void {
   }
 }
 
+/**
+ * Dev tool: `/flh-rpc-profile {"method":...,"params":...,"runs":N}` runs a handler N times (default
+ * 1) and prints the average time per call instead of the result. Used to check that no RPC stalls
+ * the game on large maps; see scripts/scenarios/flh-megabase. Mind side effects when N > 1.
+ */
+function profile(raw: string): void {
+  const request = helpers.json_to_table(raw) as (RpcRequest & { runs?: number }) | undefined;
+  const handler = request && (handlers[request.method] as ((params: unknown) => unknown) | undefined);
+  if (!request || !handler) {
+    rcon.print("Usage: /flh-rpc-profile {\"method\":\"...\",\"params\":{...},\"runs\":1}");
+    return;
+  }
+  const runs = math.max(1, request.runs ?? 1);
+  let error: string | undefined;
+  let bytes = 0;
+  const profiler = helpers.create_profiler();
+  for (let i = 0; i < runs; i++) {
+    const [ok, result] = pcall(handler, request.params ?? {});
+    if (ok) bytes = helpers.table_to_json({ id: request.id, ok: true, result }).length; // part of the real cost
+    else error = tostring(result);
+  }
+  profiler.stop();
+  profiler.divide(runs);
+  rcon.print(["", request.method, ": ", profiler, ` (avg of ${runs}), ${bytes} bytes`, error ? `, error: ${error}` : ""]);
+}
+
 export function registerRpc(): void {
+  // Only the server console / RCON may call these, never a player.
   commands.add_command("flh-rpc", "Internal: used by the Foxie's Little Helper bridge over RCON.", (event) => {
-    // Only the server console / RCON may call this, never a player.
     if (event.player_index !== undefined) {
       game.get_player(event.player_index)?.print("This command is reserved for the FLH bridge.");
       return;
     }
     handle(event.parameter ?? "");
+  });
+  commands.add_command("flh-rpc-profile", "Internal: times a Foxie's Little Helper RPC (dev tool).", (event) => {
+    if (event.player_index !== undefined) return;
+    profile(event.parameter ?? "");
   });
 }

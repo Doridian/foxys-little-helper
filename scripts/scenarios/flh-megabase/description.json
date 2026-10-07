@@ -1,0 +1,5 @@
+{
+  "order": "z",
+  "multiplayer-compatible": true,
+  "description": "Foxie's Little Helper scale test world: freeplay with a large scripted factory (a few hundred thousand entities) containing known problems."
+}

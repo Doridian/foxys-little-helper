@@ -34,7 +34,7 @@ export interface ToolContext {
 const direction = z.enum(["north", "east", "south", "west"]).optional().describe("Rotation of the design (default north = as designed)");
 const designSource = {
   design: z.string().optional().describe("Design id from list_blueprints or generate_layout"),
-  copy_area: area.optional().describe("Copy what is built in this (visible) area instead, on the same surface"),
+  copy_area: area.optional().describe("Copy what is built in this (visible) area instead, on the same surface; at most 512x512 tiles"),
   blueprint_string: z.string().optional().describe("A blueprint exchange string the player pasted"),
 };
 
@@ -80,7 +80,7 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
     betaZodTool({
       name: "game_info",
       description:
-        "Overview of the game: current tick, research, players (with surface and position), and every surface the force has charted (planets and space platforms) with charted/visible chunk counts. Call this first to orient yourself.",
+        "Overview of the game: current tick, research, players (with surface and position), and every surface the force has charted (planets and space platforms) with charted/visible chunk counts (lower bounds when `counts_partial`, on very large maps). Call this first to orient yourself.",
       inputSchema: z.object({}),
       run: () => rpc("game_info", {}),
     }),
@@ -99,10 +99,10 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
     betaZodTool({
       name: "status_summary",
       description:
-        "Group the force's entities by (name, recipe, status) and count them, with a few example positions per group. Best first step for 'why is X stuck?': e.g. filter by recipe and look for statuses like item_ingredient_shortage, full_output, no_power, low_power, waiting_for_source_items. Only chunks currently visible (radar coverage) are included.",
+        "Group the force's entities in an area by (name, recipe, status) and count them, with a few example positions per group. Best first step for 'why is X stuck?' once you know where X is: e.g. filter by recipe and look for statuses like item_ingredient_shortage, full_output, no_power, low_power, waiting_for_source_items. Without name/type only entities that have a status are counted (machines, drills, labs, inserters, power, turrets...), not belts, poles, pipes or chests. Limits: the area is at most 512x512 tiles and may hold at most 5000 matching entities (narrow it or filter otherwise); it does not cover whole surfaces. Only chunks currently visible (radar coverage) are included.",
       inputSchema: z.object({
         surface: z.string(),
-        area: area.optional().describe("Restrict to this area; omit for the whole surface"),
+        area: area.describe("Area to summarise, at most 512x512 tiles"),
         name: nameFilter,
         type: typeFilter,
         recipe: z.string().optional().describe("Only crafting machines using this recipe"),
@@ -112,12 +112,12 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
     betaZodTool({
       name: "find_entities",
       description:
-        "List your force's entities (name, type, position, status, recipe; for inserters `moves` = which entity they take from and put into) in an area or radius. Set all_forces to also see trees, rocks and enemies. Only currently visible chunks are included; `skipped_not_visible` counts the rest.",
+        "List your force's entities (name, type, position, status, recipe; for inserters `moves` = which entity they take from and put into) in an area (at most 512x512 tiles) or radius (at most 256); whole-surface searches are refused. Returns at most `limit`; when `truncated`, `total` says how many match. Set all_forces to also see trees, rocks and enemies. Only currently visible chunks are included; `skipped_not_visible` counts the rest.",
       inputSchema: z.object({
         surface: z.string(),
         area: area.optional(),
-        position: position.optional().describe("Center for a radius search"),
-        radius: z.number().positive().optional(),
+        position: position.optional().describe("Center for a radius search, or alone: entities at that spot"),
+        radius: z.number().positive().max(256).optional(),
         name: nameFilter,
         type: typeFilter,
         limit: z.number().int().positive().max(1000).optional(),
@@ -147,7 +147,7 @@ export function createTools({ game, planner, designs, playerIndex }: ToolContext
       name: "plan_production",
       description: `Calculate a production line for a target rate on a surface: recipe chain, machine counts (fractional; build the ceiling), power, raw inputs, byproducts and mining drills. Uses only researched recipes and machines by default, picks the best available machine per recipe, and respects planet surface conditions.
 
-Also returns \`current\`: current production/consumption of every involved item on that surface (10 minute average) and existing machines per recipe with their statuses, so you can work out the gap ("making 62/min, need 100").
+Also returns \`current\`: current production/consumption of every involved item on that surface (10 minute average), so you can work out the gap ("making 62/min, need 100").
 
 Notes: \`rate\` is what the new line should produce, so to raise production to a total, plan for the difference. Use \`inputs\` for items already available (e.g. plates from the main bus) so they are not expanded. Byproducts are not credited against other demand, so oil processing and recipe loops are approximate; read the warnings.`,
       inputSchema: z.object({
@@ -260,7 +260,7 @@ Then use describe_block on an id for detail.`,
     betaZodTool({
       name: "list_blueprints",
       description:
-        "Designs available to build: blueprints in registered library chests and the player's inventory (ids like c0/3), and blueprint strings from the repo (repo:...). Each has label, description, size, entity and recipe counts.",
+        "Designs available to build: blueprints in registered library chests and the player's inventory (ids like c0/3), and blueprint strings from the repo (repo:...). Each has label, description, size, entity and recipe counts; `details_omitted` marks ones too big to build (over 1500 entities) or past what one listing summarises.",
       inputSchema: z.object({}),
       run: () => json(() => designs.list(playerIndex)),
     }),
@@ -295,11 +295,12 @@ Layouts:
     }),
     betaZodTool({
       name: "find_space",
-      description: "Find the nearest free, charted, dry rectangle (trees and rocks are fine, they get cleared) of the given size near a position. Returns its top-left corner.",
+      description:
+        "Find the nearest free, charted, dry rectangle (trees and rocks are fine, they get cleared) of the given size (at most 256x256) near a position. Returns its top-left corner. Candidate spots lie on a grid that gets coarser with max_distance (about max_distance/18 tiles apart), so use a small max_distance to find small gaps nearby.",
       inputSchema: z.object({
         surface: z.string(),
-        width: z.number().positive(),
-        height: z.number().positive(),
+        width: z.number().positive().max(256),
+        height: z.number().positive().max(256),
         near: position,
         max_distance: z.number().positive().optional(),
       }),
@@ -309,7 +310,7 @@ Layouts:
       name: "propose_build",
       description: `Show the player a preview of a build and ask for approval. Nothing is placed yet: the player sees outlines (red where blocked) and Build / Blueprint / Reject buttons, or can answer in chat (then use resolve_proposal).
 
-\`position\` is the top-left corner of the build. The result lists entity counts, blocked spots, trees/rocks to clear, total cost, and whether construction robots cover the area and what items the network lacks. Mention blockers and missing items to the player. Entities players can't build (script-only ones) are removed and reported.`,
+\`position\` is the top-left corner of the build. Designs are limited to 1500 entities and 512 tiles across (copy_area at most 512x512): build bigger things in parts. The result lists entity counts, blocked spots, trees/rocks to clear, total cost, and whether construction robots cover the area and what items the network lacks. Mention blockers and missing items to the player. Entities players can't build (script-only ones) are removed and reported.`,
       inputSchema: z.object({
         surface: z.string(),
         position,
@@ -338,14 +339,15 @@ Layouts:
     }),
     betaZodTool({
       name: "give_blueprint",
-      description: "Put a design into the player's cursor as a blueprint so they can place it themselves (no preview or approval needed).",
+      description:
+        "Put a design (at most 1500 entities) into the player's cursor as a blueprint so they can place it themselves (no preview or approval needed).",
       inputSchema: z.object({ surface: z.string().describe("Surface for copy_area"), label: z.string().optional(), ...designSource }),
       run: (input) => json(() => game.call("give_blueprint", { player_index: playerIndex, label: input.label, source: source(input.surface, input) })),
     }),
     betaZodTool({
       name: "deconstruct",
       description:
-        "Mark the force's entities in a visible area for deconstruction by robots, optionally only certain names/types. Destructive: unless the player explicitly asked for exactly this, describe what would be removed and get a yes first.",
+        "Mark the force's entities in a visible area (at most 512x512 tiles, 5000 entities per call) for deconstruction by robots, optionally only certain names/types. Destructive: unless the player explicitly asked for exactly this, describe what would be removed and get a yes first.",
       inputSchema: z.object({ surface: z.string(), area, name: nameFilter, type: typeFilter }),
       run: (input) => rpc("deconstruct", { ...input, player_index: playerIndex }),
     }),

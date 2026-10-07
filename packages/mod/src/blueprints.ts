@@ -3,8 +3,9 @@
 // lab-tile surface), and indexing the in-game blueprint library.
 
 import { Area, BlueprintSource, Direction, LibraryBlueprint, Position } from "@flh/protocol";
-import { BlueprintEntityWrite, LuaItemStack, LuaPlayer, LuaSurface } from "factorio:runtime";
+import { BlueprintEntity, BlueprintEntityWrite, LuaItemStack, LuaPlayer, LuaSurface } from "factorio:runtime";
 import { chunkOf, helperForce, isChunkCharted, isChunkVisible, isPositionVisible, requireKnownSurface } from "./fairness";
+import { MAX_AREA_SIZE, boundedRegion } from "./queries";
 
 const SCRATCH_SURFACE = "flh-scratch";
 
@@ -113,11 +114,31 @@ function summarizeBlueprint(stack: LuaItemStack): Omit<LibraryBlueprint, "id" | 
   };
 }
 
+/** Blueprint entities listLibrary reads in total (~1.5 us each); the rest are listed without details. */
+const MAX_LIBRARY_DETAIL_ENTITIES = 10000;
+
 export function listLibrary(player?: LuaPlayer): LibraryBlueprint[] {
   const result: LibraryBlueprint[] = [];
+  let budget = MAX_LIBRARY_DETAIL_ENTITIES;
   for (const root of libraryRoots(player)) {
     walkLibrary(root.stacks, root.prefix, undefined, (id, stack, book) => {
-      result.push({ id, book, ...summarizeBlueprint(stack) });
+      const count = stack.get_blueprint_entity_count();
+      if (count > budget || count > MAX_BUILD_ENTITIES) {
+        result.push({
+          id,
+          book,
+          label: stack.label,
+          description: stack.blueprint_description,
+          size: { width: 0, height: 0 },
+          entities: {},
+          recipes: {},
+          entity_count: count,
+          details_omitted: true,
+        });
+        return;
+      }
+      budget -= count;
+      result.push({ id, book, entity_count: count, ...summarizeBlueprint(stack) });
     });
   }
   return result;
@@ -152,12 +173,16 @@ function buildable(name: string): boolean {
   return items.some((i) => prototypes.item[i.name] !== undefined && !prototypes.item[i.name]!.hidden);
 }
 
+/** Most entities one design may have: previewing costs ~25 us per entity, all in one tick. */
+export const MAX_BUILD_ENTITIES = 1500;
+const TOO_BIG = `Designs are limited to ${MAX_BUILD_ENTITIES} entities so previews don't stall the game; build it in parts`;
+
 /** Loads a design into scratch slot 0 and removes unbuildable entities. */
 export function loadSource(
   source: BlueprintSource,
   player?: LuaPlayer,
   label?: string,
-): { stack: LuaItemStack; removed: Record<string, number> } {
+): { stack: LuaItemStack; removed: Record<string, number>; entities: BlueprintEntity[] } {
   const stack = scratchStack(0);
   stack.clear();
   switch (source.kind) {
@@ -176,7 +201,10 @@ export function loadSource(
       break;
     case "copy": {
       const surface = requireKnownSurface(helperForce(), source.surface);
+      const region = boundedRegion(source, "copy_area", { circle: false, overview: false });
       requireVisible(surface, source.area);
+      const count = surface.count_entities_filtered({ ...region.filter, force: helperForce(), limit: MAX_BUILD_ENTITIES + 1 });
+      if (count > MAX_BUILD_ENTITIES) throw `${TOO_BIG} (copy a smaller area)`;
       stack.set_stack("blueprint");
       stack.create_blueprint({
         surface,
@@ -189,6 +217,11 @@ export function loadSource(
     }
   }
   if (!stack.valid_for_read || !stack.is_blueprint || !stack.is_blueprint_setup()) throw "That design has no entities";
+  if (stack.get_blueprint_entity_count() > MAX_BUILD_ENTITIES) {
+    const count = stack.get_blueprint_entity_count();
+    stack.clear();
+    throw `That design has ${count} entities. ${TOO_BIG}`;
+  }
   if (label) stack.label = label;
 
   const removed: Record<string, number> = {};
@@ -202,7 +235,7 @@ export function loadSource(
     if (kept.length === 0) throw "Nothing in that design can be built by players";
     stack.set_blueprint_entities(kept as unknown as BlueprintEntityWrite[]);
   }
-  return { stack, removed };
+  return { stack, removed, entities: kept };
 }
 
 // ---- Dry run ----
@@ -229,12 +262,17 @@ function scratchSurface(): LuaSurface {
  * Builds the blueprint on the hidden scratch surface at the origin and reports the ghosts'
  * exact positions and footprints, so previews match what build_blueprint will really do.
  */
-export function dryRun(stack: LuaItemStack, direction: defines.direction): { ghosts: GhostInfo[]; bbox: Area } {
+export function dryRun(
+  stack: LuaItemStack,
+  direction: defines.direction,
+  entities: BlueprintEntity[] = stack.get_blueprint_entities() ?? [],
+): { ghosts: GhostInfo[]; bbox: Area } {
   const surface = scratchSurface();
-  const entities = stack.get_blueprint_entities() ?? [];
   let extent = 8;
   for (const e of entities) extent = math.max(extent, math.abs(e.position.x), math.abs(e.position.y));
-  surface.request_to_generate_chunks({ x: 0, y: 0 }, math.min(30, math.ceil(extent / 16) + 1));
+  // Bounds the scratch chunks generated (once) as well as the work below.
+  if (extent > MAX_AREA_SIZE / 2) throw `That design is more than ${MAX_AREA_SIZE} tiles across; build it in parts`;
+  surface.request_to_generate_chunks({ x: 0, y: 0 }, math.ceil(extent / 16) + 1);
   surface.force_generate_chunk_requests();
 
   const built = stack.build_blueprint({

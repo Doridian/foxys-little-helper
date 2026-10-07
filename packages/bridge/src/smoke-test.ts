@@ -13,8 +13,10 @@ const show = async (label: string, p: Promise<unknown>) => {
 };
 await show("game_info", game.call("game_info", {}));
 await show("production", game.call("production", { surface: "nauvis", window: "1m" }));
-await show("status_summary", game.call("status_summary", { surface: "nauvis", type: ["assembling-machine", "furnace"] }));
-await show("find_entities", game.call("find_entities", { surface: "nauvis", type: "assembling-machine" }));
+const demo = { left_top: { x: 0, y: -45 }, right_bottom: { x: 80, y: 75 } };
+await show("status_summary", game.call("status_summary", { surface: "nauvis", area: demo, type: ["assembling-machine", "furnace"] }));
+await show("find_entities", game.call("find_entities", { surface: "nauvis", area: demo, type: "assembling-machine" }));
+await show("whole_surface", game.call("find_entities", { surface: "nauvis", type: "assembling-machine" }));
 await show("inspect_entity", game.call("inspect_entity", { surface: "nauvis", position: { x: 13.5, y: 5.5 }, name: "assembling-machine-2" }));
 await show("inspect_inserter", game.call("inspect_entity", { surface: "nauvis", position: { x: 13.5, y: 7.5 }, name: "inserter" }));
 await show("production_mixed", game.call("production", { surface: "nauvis", window: "1m", items: ["electronic-circuit", "petroleum-gas"] }));
