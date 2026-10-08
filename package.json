@@ -14,6 +14,6 @@
     "dev-server": "scripts/dev-server.sh"
   },
   "devDependencies": {
-    "typescript": "6.0.3"
+    "typescript": "7.0.2"
   }
 }
