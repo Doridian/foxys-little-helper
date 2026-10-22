@@ -9,7 +9,7 @@
   "devDependencies": {
     "@flh/protocol": "*",
     "lua-types": "^2.13.1",
-    "typed-factorio": "^3.36.0",
+    "typed-factorio": "^4.0.0",
     "typescript-to-lua": "^1.37.1"
   }
 }
